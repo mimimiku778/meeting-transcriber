@@ -1,5 +1,7 @@
 """Speaker diarization module using SpeechBrain (simple-diarizer)."""
 
+import os
+from pathlib import Path
 from simple_diarizer.diarizer import Diarizer
 
 # Global diarizer instance (lazy loading)
@@ -10,11 +12,21 @@ def load_diarization_pipeline() -> Diarizer:
     """Load SpeechBrain-based diarizer (faster than pyannote)."""
     global _diarizer
     if _diarizer is None:
-        # Use ECAPA-TDNN embeddings with spectral clustering
-        _diarizer = Diarizer(
-            embed_model='ecapa',
-            cluster_method='sc'  # spectral clustering
-        )
+        # Set model cache directory to user's home to avoid read-only filesystem issues
+        cache_dir = Path.home() / ".cache" / "meeting-transcriber" / "models"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Change to cache dir temporarily to ensure models are saved there
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(cache_dir)
+            # Use ECAPA-TDNN embeddings with spectral clustering
+            _diarizer = Diarizer(
+                embed_model='ecapa',
+                cluster_method='sc'  # spectral clustering
+            )
+        finally:
+            os.chdir(original_cwd)
     return _diarizer
 
 

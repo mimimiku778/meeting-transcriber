@@ -26,12 +26,14 @@ dependencies = [
     "mlx-whisper>=0.4.0",
     "simple-diarizer>=0.0.13",
     "opencv-python>=4.8.0",
-    "torch>=2.0.0",
-    "torchaudio>=2.0.0",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "huggingface_hub<0.24",  # speechbrain 1.0.3 uses deprecated use_auth_token
 ]
 
 [project.scripts]
 transcribe = "meeting_transcriber.cli:main"
+transcribe-watch = "meeting_transcriber.cli:watch_progress"
 meeting-transcriber-server = "meeting_transcriber.server:run"
 
 [tool.setuptools.packages.find]

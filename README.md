@@ -84,19 +84,39 @@ transcribe /path/to/video.mov --speakers 3
 transcribe /path/to/video.mov --fast
 
 # モデル指定
-transcribe /path/to/video.mov -m turbo  # 高速、精度やや低
+transcribe /path/to/video.mov -m small  # 高速、精度やや低
 transcribe /path/to/video.mov -m medium # バランス型
+```
+
+### 進行状況の監視
+
+Claude CodeでMCPツール実行中は進行状況が見えません。別のターミナルで監視コマンドを実行すると、リアルタイムでプログレスバーが表示されます。
+
+```bash
+# 別のターミナルで実行
+transcribe --watch
+```
+
+表示例:
+```
+📡 MCPサーバーの進行状況を監視中... (Ctrl+C で終了)
+
+⏳ [██████████░░░░░░░░░░░░░░░░░░░░] 1/2 - Whisper (medium) で文字起こし中... (45秒)
+```
+
+処理が完了すると:
+```
+✅ [██████████████████████████████] 2/2 - 完了 (120秒)
+
+処理が完了しました！
 ```
 
 ### モデル一覧
 
 | モデル | 精度 | 速度 | サイズ |
 |--------|------|------|--------|
-| tiny | ★☆☆☆☆ | 最速 | 75MB |
-| base | ★★☆☆☆ | 速い | 142MB |
-| small | ★★★☆☆ | 普通 | 466MB |
+| small | ★★★☆☆ | 速い | 466MB |
 | medium | ★★★★☆ | やや遅い | 1.5GB |
-| turbo | ★★★★☆ | 速い | 1.6GB |
 | large-v3 | ★★★★★ | 遅い | 3GB |
 
 ※ デフォルトは `large-v3`（最高精度）

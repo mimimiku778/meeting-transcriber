@@ -6,16 +6,23 @@ from pathlib import Path
 import cv2
 
 
-def extract_frame(video_path: str, timestamp_seconds: float) -> str:
+def extract_frame(
+    video_path: str,
+    timestamp_seconds: float,
+    max_width: int = 1280,
+    jpeg_quality: int = 80,
+) -> str:
     """
     Extract a frame from video at specified timestamp.
 
     Args:
         video_path: Path to video file
         timestamp_seconds: Time in seconds to extract frame
+        max_width: Maximum width for resizing (default: 1280)
+        jpeg_quality: JPEG compression quality 0-100 (default: 80)
 
     Returns:
-        Base64 encoded PNG image
+        Base64 encoded JPEG image
     """
     video_path = Path(video_path)
     if not video_path.exists():
@@ -42,8 +49,17 @@ def extract_frame(video_path: str, timestamp_seconds: float) -> str:
         if not ret:
             raise ValueError(f"Could not read frame at {timestamp_seconds}s")
 
-        # Encode as PNG
-        _, buffer = cv2.imencode('.png', frame)
+        # Resize if larger than max_width
+        height, width = frame.shape[:2]
+        if width > max_width:
+            scale = max_width / width
+            new_width = max_width
+            new_height = int(height * scale)
+            frame = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+        # Encode as JPEG with compression
+        encode_params = [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality]
+        _, buffer = cv2.imencode('.jpg', frame, encode_params)
         base64_image = base64.b64encode(buffer).decode('utf-8')
 
         return base64_image

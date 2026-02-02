@@ -6,11 +6,24 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
 from .transcriber import transcribe_video, format_timestamp
 from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
+
+LOG_FILE = Path("/tmp/meeting-transcriber.log")
+
+
+def watch_progress():
+    """Watch MCP server log with tail -f."""
+    print("📡 ログを監視中... (Ctrl+C で終了)")
+    print()
+    try:
+        subprocess.run(["tail", "-f", str(LOG_FILE)])
+    except KeyboardInterrupt:
+        pass
 
 
 def main():
@@ -19,7 +32,13 @@ def main():
     )
     parser.add_argument(
         "video_path",
+        nargs="?",
         help="動画ファイルのパス"
+    )
+    parser.add_argument(
+        "--watch", "-w",
+        action="store_true",
+        help="MCPサーバーの進行状況を監視"
     )
     parser.add_argument(
         "-o", "--output",
@@ -27,9 +46,9 @@ def main():
     )
     parser.add_argument(
         "-m", "--model",
-        default="large-v3",
-        choices=["tiny", "base", "small", "medium", "large", "large-v3", "turbo"],
-        help="Whisperモデルサイズ (default: large-v3, 最高精度)"
+        default="medium",
+        choices=["small", "medium", "large", "large-v3", "turbo"],
+        help="Whisperモデルサイズ (default: medium)"
     )
     parser.add_argument(
         "--fast",
@@ -49,6 +68,15 @@ def main():
     )
 
     args = parser.parse_args()
+
+    # Watch mode
+    if args.watch:
+        watch_progress()
+        return
+
+    # Normal transcription mode requires video_path
+    if not args.video_path:
+        parser.error("動画ファイルのパスを指定してください（または --watch で進行状況を監視）")
 
     video_path = Path(args.video_path).resolve()
     if not video_path.exists():
