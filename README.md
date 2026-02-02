@@ -24,13 +24,8 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
     よろしくお願いします。
     ↓
 [次のアクション選択]
-  A. 議事録を作成 → テンプレート確認、誤字修正、名前確認
-  B. 文字起こし確認
-  C. 発話者名を更新
-    ↓
-[名前確認時: 動画フレームから参加者名を取得]
-    ↓
-[議事録生成]
+  A. 議事録を作成 → 動画フレームから名前取得、誤字修正、議事録生成
+  B. 発話者名のみ更新 → 動画フレームから名前取得して置換
 ```
 
 ## 必要環境
@@ -54,7 +49,6 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
 `install.sh` が自動設定:
 
 - Claude Code: MCPサーバー + `/transcribe-meeting` スキル
-- Claude Desktop: MCPサーバー
 - CLI: `transcribe` コマンド
 
 ## セットアップ
@@ -70,6 +64,12 @@ cd meeting-transcriber
 ffmpeg、Python依存パッケージは自動インストールされます。
 
 ## 使い方
+
+### Claude Code
+
+```
+/transcribe-meeting /path/to/video.mov
+```
 
 ### CLI
 
@@ -101,27 +101,12 @@ transcribe /path/to/video.mov -m medium # バランス型
 
 ※ デフォルトは `large-v3`（最高精度）
 
-### Claude Code
-
-```
-/transcribe-meeting /path/to/video.mov
-```
-
-### Claude Desktop
-
-再起動後:
-```
-「/path/to/meeting.mp4 の議事録を作成して」
-```
-
 ## アンインストール
 
 ```bash
 # Claude Code
 claude mcp remove meeting-transcriber -s user
 rm ~/.claude/commands/transcribe-meeting.md
-
-# Claude Desktop: claude_desktop_config.json から meeting-transcriber を削除
 
 # CLI
 rm ~/.local/bin/transcribe

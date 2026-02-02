@@ -57,38 +57,16 @@ else
     echo -e "   ${YELLOW}⚠ スキップ${NC}"
 fi
 
-# 6. Claude Desktop
+# 6. スキル
 echo ""
-echo "5. Claude Desktop..."
-DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
-if [ -f "$DESKTOP_CONFIG" ]; then
-    python3 << EOF
-import json
-from pathlib import Path
-p = Path("$DESKTOP_CONFIG")
-c = json.loads(p.read_text())
-c.setdefault("mcpServers", {})["meeting-transcriber"] = {
-    "command": "$SCRIPT_DIR/.venv/bin/python",
-    "args": ["-m", "meeting_transcriber.server"],
-    "env": {"PYTHONPATH": "$SCRIPT_DIR/src"}
-}
-p.write_text(json.dumps(c, indent=2, ensure_ascii=False))
-EOF
-    echo -e "   ${GREEN}✓${NC}"
-else
-    echo -e "   ${YELLOW}⚠ スキップ${NC}"
-fi
-
-# 7. スキル
-echo ""
-echo "6. Claude Codeスキル..."
+echo "5. Claude Codeスキル..."
 mkdir -p "$HOME/.claude/commands"
 cp -f "$SCRIPT_DIR/skills/transcribe-meeting.md" "$HOME/.claude/commands/"
 echo -e "   ${GREEN}✓${NC}"
 
-# 8. CLI
+# 7. CLI
 echo ""
-echo "7. CLIコマンド..."
+echo "6. CLIコマンド..."
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/transcribe" << EOF
 #!/bin/bash
