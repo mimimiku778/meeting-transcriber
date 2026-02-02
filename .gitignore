@@ -1,0 +1,40 @@
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# OS
+.DS_Store
+.DS_Store?
+Thumbs.db
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.temp
+
+# Model cache (large files)
+*.pt
+*.bin
