@@ -1,48 +1,30 @@
-"""Speaker diarization module using pyannote-audio."""
+"""Speaker diarization module using SpeechBrain (simple-diarizer)."""
 
-import os
-from pathlib import Path
+from simple_diarizer.diarizer import Diarizer
 
-# Force CPU for pyannote-audio (MPS doesn't support sparse tensors)
-# Must be set before torch import
-os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-
-import torch
-
-# Monkey-patch MPS availability to force CPU usage
-# pyannote-audio checks this internally and will use MPS if available
-torch.backends.mps.is_available = lambda: False
-torch.backends.mps.is_built = lambda: False
-
-from pyannote.audio import Pipeline
+# Global diarizer instance (lazy loading)
+_diarizer = None
 
 
-def load_diarization_pipeline() -> Pipeline:
-    """Load pyannote speaker diarization pipeline."""
-    hf_token = os.environ.get("HF_TOKEN")
-    if not hf_token:
-        raise ValueError("HF_TOKEN environment variable is required for pyannote-audio")
-
-    # Note: pyannote-audio uses sparse tensor ops not supported on MPS
-    # Force CPU for compatibility on Apple Silicon
-    device = torch.device("cpu")
-
-    pipeline = Pipeline.from_pretrained(
-        "pyannote/speaker-diarization-3.1",
-        token=hf_token
-    )
-    pipeline.to(device)
-
-    return pipeline
+def load_diarization_pipeline() -> Diarizer:
+    """Load SpeechBrain-based diarizer (faster than pyannote)."""
+    global _diarizer
+    if _diarizer is None:
+        # Use ECAPA-TDNN embeddings with spectral clustering
+        _diarizer = Diarizer(
+            embed_model='ecapa',
+            cluster_method='sc'  # spectral clustering
+        )
+    return _diarizer
 
 
-def diarize_audio(audio_path: str, pipeline: Pipeline = None, num_speakers: int = None) -> list[dict]:
+def diarize_audio(audio_path: str, pipeline: Diarizer = None, num_speakers: int = None) -> list[dict]:
     """
     Perform speaker diarization on audio file.
 
     Args:
         audio_path: Path to audio file
-        pipeline: Diarization pipeline (loaded if None)
+        pipeline: Diarizer instance (loaded if None)
         num_speakers: Number of speakers (optional, improves accuracy)
 
     Returns:
@@ -51,36 +33,23 @@ def diarize_audio(audio_path: str, pipeline: Pipeline = None, num_speakers: int 
     if pipeline is None:
         pipeline = load_diarization_pipeline()
 
-    # Load audio using torchaudio (avoids torchcodec AudioDecoder issue)
-    import torchaudio
-    waveform, sample_rate = torchaudio.load(audio_path)
-
-    # pyannote expects dict with 'waveform' and 'sample_rate'
-    audio_input = {"waveform": waveform, "sample_rate": sample_rate}
-
-    # Pass num_speakers if specified
+    # Diarize
     if num_speakers is not None:
-        result = pipeline(audio_input, num_speakers=num_speakers)
+        segments = pipeline.diarize(audio_path, num_speakers=num_speakers)
     else:
-        result = pipeline(audio_input)
+        # Auto-detect number of speakers
+        segments = pipeline.diarize(audio_path, threshold=0.5)
 
-    # Handle both DiarizeOutput (new API) and Annotation (old API)
-    if hasattr(result, 'speaker_diarization'):
-        # New API: DiarizeOutput dataclass
-        diarization = result.speaker_diarization
-    else:
-        # Old API: direct Annotation object
-        diarization = result
-
-    segments = []
-    for turn, _, speaker in diarization.itertracks(yield_label=True):
-        segments.append({
-            "start": turn.start,
-            "end": turn.end,
-            "speaker": speaker
+    # Convert to our format
+    result = []
+    for seg in segments:
+        result.append({
+            "start": seg["start"],
+            "end": seg["end"],
+            "speaker": f"SPEAKER_{seg['label']}"
         })
 
-    return segments
+    return result
 
 
 def assign_speakers_to_segments(whisper_result: dict, diarization_segments: list[dict]) -> list[dict]:

@@ -38,3 +38,4 @@ Thumbs.db
 # Model cache (large files)
 *.pt
 *.bin
+pretrained_models/

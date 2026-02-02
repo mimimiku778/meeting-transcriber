@@ -4,8 +4,8 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
 
 ## 機能
 
-1. 動画から音声を抽出し、Whisperで文字起こし
-2. pyannote-audioで話者を自動識別（発話者1、発話者2...）
+1. 動画から音声を抽出し、mlx-Whisperで文字起こし（Apple Silicon最適化）
+2. SpeechBrainで話者を自動識別（発話者1、発話者2...）
 3. 動画のフレームから参加者名を取得し、発話者名を置換
 4. 対話的に議事録を作成
 
@@ -47,7 +47,7 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
 |-----------|------|
 | ffmpeg | 動画から音声抽出 |
 | mlx-whisper | 音声→テキスト変換（Apple Silicon最適化） |
-| pyannote.audio | 話者識別 |
+| simple-diarizer | 話者識別（SpeechBrain ECAPA-TDNN） |
 | torch / torchaudio | 機械学習基盤 |
 | opencv-python | 動画フレーム抽出 |
 
@@ -59,19 +59,7 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
 
 ## セットアップ
 
-### 1. Hugging Face権限（3つとも必須）
-
-各リンクで「Access repository」をクリック:
-
-- https://huggingface.co/pyannote/speaker-diarization-3.1
-- https://huggingface.co/pyannote/segmentation-3.0
-- https://huggingface.co/pyannote/speaker-diarization-community-1
-
-### 2. Hugging Faceトークン取得
-
-https://huggingface.co/settings/tokens
-
-### 3. インストール
+### 1. インストール
 
 ```bash
 git clone <repo-url>
@@ -81,23 +69,37 @@ cd meeting-transcriber
 
 ffmpeg、Python依存パッケージは自動インストールされます。
 
-### 4. HF_TOKEN設定
-
-```bash
-cp .env.example .env
-# .env を編集してトークンを設定
-```
-
-または `install.sh` 実行時に入力すると自動で `.env` が作成されます。
-
 ## 使い方
 
 ### CLI
 
 ```bash
+# 最高精度（デフォルト: large-v3モデル）
 transcribe /path/to/video.mov
-transcribe /path/to/video.mov --speakers 3  # 話者数指定
+
+# 話者数を指定（精度向上）
+transcribe /path/to/video.mov --speakers 3
+
+# 速度優先モード
+transcribe /path/to/video.mov --fast
+
+# モデル指定
+transcribe /path/to/video.mov -m turbo  # 高速、精度やや低
+transcribe /path/to/video.mov -m medium # バランス型
 ```
+
+### モデル一覧
+
+| モデル | 精度 | 速度 | サイズ |
+|--------|------|------|--------|
+| tiny | ★☆☆☆☆ | 最速 | 75MB |
+| base | ★★☆☆☆ | 速い | 142MB |
+| small | ★★★☆☆ | 普通 | 466MB |
+| medium | ★★★★☆ | やや遅い | 1.5GB |
+| turbo | ★★★★☆ | 速い | 1.6GB |
+| large-v3 | ★★★★★ | 遅い | 3GB |
+
+※ デフォルトは `large-v3`（最高精度）
 
 ### Claude Code
 

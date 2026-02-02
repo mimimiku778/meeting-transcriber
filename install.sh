@@ -44,40 +44,22 @@ pip install -q --upgrade pip
 pip install -q -e .
 echo -e "   ${GREEN}✓${NC}"
 
-# 5. HF_TOKEN (.env)
+# 5. Claude Code MCP
 echo ""
-echo "4. HF_TOKEN..."
-if [ -f "$SCRIPT_DIR/.env" ]; then
-    source "$SCRIPT_DIR/.env"
-fi
-if [ -z "$HF_TOKEN" ]; then
-    read -p "   トークンを入力 (空欄でスキップ): " HF_TOKEN_INPUT
-    [ -n "$HF_TOKEN_INPUT" ] && HF_TOKEN="$HF_TOKEN_INPUT"
-fi
-if [ -n "$HF_TOKEN" ]; then
-    echo "HF_TOKEN=$HF_TOKEN" > "$SCRIPT_DIR/.env"
-    echo -e "   ${GREEN}✓${NC} .envに保存"
-else
-    echo -e "   ${YELLOW}⚠ 未設定（後で .env に HF_TOKEN=xxx を記載）${NC}"
-fi
-
-# 6. Claude Code MCP
-echo ""
-echo "5. Claude Code..."
+echo "4. Claude Code..."
 if command -v claude &> /dev/null; then
     claude mcp remove meeting-transcriber -s user 2>/dev/null || true
-    ENV_ARGS=(-e PYTHONPATH="$SCRIPT_DIR/src")
-    [ -n "$HF_TOKEN" ] && ENV_ARGS+=(-e HF_TOKEN="$HF_TOKEN")
-    claude mcp add meeting-transcriber -s user "${ENV_ARGS[@]}" \
+    claude mcp add meeting-transcriber -s user \
+        -e PYTHONPATH="$SCRIPT_DIR/src" \
         -- "$SCRIPT_DIR/.venv/bin/python" -m meeting_transcriber.server
     echo -e "   ${GREEN}✓${NC}"
 else
     echo -e "   ${YELLOW}⚠ スキップ${NC}"
 fi
 
-# 7. Claude Desktop
+# 6. Claude Desktop
 echo ""
-echo "6. Claude Desktop..."
+echo "5. Claude Desktop..."
 DESKTOP_CONFIG="$HOME/Library/Application Support/Claude/claude_desktop_config.json"
 if [ -f "$DESKTOP_CONFIG" ]; then
     python3 << EOF
@@ -88,7 +70,7 @@ c = json.loads(p.read_text())
 c.setdefault("mcpServers", {})["meeting-transcriber"] = {
     "command": "$SCRIPT_DIR/.venv/bin/python",
     "args": ["-m", "meeting_transcriber.server"],
-    "env": {"PYTHONPATH": "$SCRIPT_DIR/src", "HF_TOKEN": "${HF_TOKEN:-}"}
+    "env": {"PYTHONPATH": "$SCRIPT_DIR/src"}
 }
 p.write_text(json.dumps(c, indent=2, ensure_ascii=False))
 EOF
@@ -97,16 +79,16 @@ else
     echo -e "   ${YELLOW}⚠ スキップ${NC}"
 fi
 
-# 8. スキル
+# 7. スキル
 echo ""
-echo "7. Claude Codeスキル..."
+echo "6. Claude Codeスキル..."
 mkdir -p "$HOME/.claude/commands"
 cp -f "$SCRIPT_DIR/skills/transcribe-meeting.md" "$HOME/.claude/commands/"
 echo -e "   ${GREEN}✓${NC}"
 
-# 9. CLI
+# 8. CLI
 echo ""
-echo "8. CLIコマンド..."
+echo "7. CLIコマンド..."
 mkdir -p "$HOME/.local/bin"
 cat > "$HOME/.local/bin/transcribe" << EOF
 #!/bin/bash
@@ -128,9 +110,3 @@ echo ""
 echo "使い方:"
 echo "  transcribe /path/to/video.mov"
 echo "  /transcribe-meeting /path/to/video.mov  (Claude Code)"
-echo ""
-[ -z "$HF_TOKEN" ] && echo -e "${YELLOW}HF_TOKENを設定: export HF_TOKEN=\"hf_xxx\"${NC}" && echo ""
-echo "権限が必要:"
-echo "  https://huggingface.co/pyannote/speaker-diarization-3.1"
-echo "  https://huggingface.co/pyannote/segmentation-3.0"
-echo "  https://huggingface.co/pyannote/speaker-diarization-community-1"

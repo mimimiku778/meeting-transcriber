@@ -9,11 +9,6 @@ import argparse
 import sys
 from pathlib import Path
 
-# Load .env from package directory
-from dotenv import load_dotenv
-_env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(_env_path)
-
 from .transcriber import transcribe_video, format_timestamp
 from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
 
@@ -32,9 +27,14 @@ def main():
     )
     parser.add_argument(
         "-m", "--model",
-        default="medium",
-        choices=["tiny", "base", "small", "medium", "large"],
-        help="Whisperモデルサイズ (default: medium)"
+        default="large-v3",
+        choices=["tiny", "base", "small", "medium", "large", "large-v3", "turbo"],
+        help="Whisperモデルサイズ (default: large-v3, 最高精度)"
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="速度優先モード（精度設定を緩和）"
     )
     parser.add_argument(
         "--no-diarization",
@@ -61,14 +61,17 @@ def main():
     else:
         output_path = Path(output_path)
 
+    max_accuracy = not args.fast
+    mode = "速度優先" if args.fast else "最高精度"
+
     print(f"動画: {video_path}")
     print(f"出力: {output_path}")
-    print(f"モデル: {args.model}")
+    print(f"モデル: {args.model} ({mode})")
     print()
 
     # Step 1: Transcribe
     print("1/3 音声抽出・文字起こし中...")
-    whisper_result, audio_path = transcribe_video(str(video_path), args.model)
+    whisper_result, audio_path = transcribe_video(str(video_path), args.model, max_accuracy)
     print(f"    完了 ({len(whisper_result.get('segments', []))} セグメント)")
 
     # Step 2: Speaker diarization
