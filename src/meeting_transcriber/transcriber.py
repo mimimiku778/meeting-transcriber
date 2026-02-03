@@ -12,7 +12,7 @@ MLX_MODELS = {
     "small": "mlx-community/whisper-small-mlx",
     "medium": "mlx-community/whisper-medium-mlx",
     "large-v3": "mlx-community/whisper-large-v3-mlx",
-    "turbo": "mlx-community/whisper-turbo",
+    "turbo": "mlx-community/whisper-large-v3-turbo",
 }
 
 JAPANESE_MEETING_PROMPT = """これは日本語の会議の文字起こしです。

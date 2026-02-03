@@ -26,6 +26,100 @@ def watch_progress():
         pass
 
 
+def should_skip_process(pid: int, current_pid: int) -> bool:
+    """Check if a process should be skipped (watch, kill, tail, or current process)."""
+    if pid == current_pid:
+        return True
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "args="],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            cmdline = result.stdout.strip()
+            # Skip watch processes
+            if "--watch" in cmdline or " -w " in cmdline or cmdline.endswith(" -w"):
+                return True
+            # Skip kill processes (including this one)
+            if "--kill" in cmdline or " -k " in cmdline or cmdline.endswith(" -k"):
+                return True
+            # Skip tail processes (used by --watch)
+            if cmdline.startswith("tail "):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def kill_all_transcribe():
+    """Kill all transcribe processes and restart MCP servers."""
+    import os
+    import signal
+    from datetime import datetime
+
+    current_pid = os.getpid()
+    killed_transcribe = []
+    killed_mcp = []
+
+    # Patterns to search for (don't include generic "transcribe" to avoid killing watch/kill)
+    patterns = [
+        ("mlx_whisper", killed_transcribe),
+        ("simple_diarizer", killed_transcribe),
+        ("speechbrain", killed_transcribe),
+        ("meeting-transcriber", killed_mcp),
+        ("mcp-server", killed_mcp),
+    ]
+
+    all_killed = set()
+    for pattern, killed_list in patterns:
+        result = subprocess.run(
+            ["pgrep", "-f", pattern],
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode == 0:
+            pids = result.stdout.strip().split("\n")
+            for pid_str in pids:
+                if pid_str:
+                    pid = int(pid_str)
+                    if pid in all_killed:
+                        continue
+                    if should_skip_process(pid, current_pid):
+                        continue
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                        killed_list.append(pid)
+                        all_killed.add(pid)
+                    except ProcessLookupError:
+                        pass
+
+    # Write to log file so --watch can see it
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    log_messages = [f"\n{'='*50}", f"[{timestamp}] 強制終了が実行されました"]
+    if killed_transcribe:
+        log_messages.append(f"  文字起こしプロセス: {len(killed_transcribe)} 件終了")
+    if killed_mcp:
+        log_messages.append(f"  MCPサーバー: {len(killed_mcp)} 件終了（自動再起動します）")
+    log_messages.append("=" * 50 + "\n")
+
+    with open(LOG_FILE, "a") as f:
+        f.write("\n".join(log_messages))
+
+    # Report results to terminal
+    if killed_transcribe:
+        print(f"文字起こしプロセス終了: {len(killed_transcribe)} 件 (PID: {', '.join(map(str, killed_transcribe))})")
+    else:
+        print("実行中の文字起こしプロセスはありません")
+
+    if killed_mcp:
+        print(f"MCPサーバー終了: {len(killed_mcp)} 件 (PID: {', '.join(map(str, killed_mcp))})")
+        print("💡 MCPサーバーはClaude Codeが自動的に再起動します")
+    else:
+        print("実行中のMCPサーバーはありません")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="会議動画から話者識別付き文字起こしを生成"
@@ -39,6 +133,11 @@ def main():
         "--watch", "-w",
         action="store_true",
         help="MCPサーバーの進行状況を監視"
+    )
+    parser.add_argument(
+        "--kill", "-k",
+        action="store_true",
+        help="全ての文字起こしプロセスを強制終了"
     )
     parser.add_argument(
         "-o", "--output",
@@ -72,6 +171,11 @@ def main():
     # Watch mode
     if args.watch:
         watch_progress()
+        return
+
+    # Kill mode
+    if args.kill:
+        kill_all_transcribe()
         return
 
     # Normal transcription mode requires video_path

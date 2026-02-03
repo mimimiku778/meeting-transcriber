@@ -1,13 +1,14 @@
 # Meeting Transcriber
 
-Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコードした動画から、話者識別付き議事録を作成するツール。
+Web会議の録画動画から話者識別付き議事録を作成するMCPサーバー & CLIツール。
 
-## 機能
+## 構成
 
-1. 動画から音声を抽出し、mlx-Whisperで文字起こし（Apple Silicon最適化）
-2. SpeechBrainで話者を自動識別（発話者1、発話者2...）
-3. 動画のフレームから参加者名を取得し、発話者名を置換
-4. 対話的に議事録を作成
+**スキル:** `/transcribe-meeting` - 対話的に議事録作成をガイド
+
+**MCPツール:** `transcribe_meeting`（文字起こし+話者識別）, `extract_video_frame`（フレーム+OCR）, `update_speaker_names`, `read_transcript`
+
+**技術:** mlx-Whisper（音声認識）, SpeechBrain（話者識別）, macOS Vision（OCR）
 
 ## 動作フロー
 
@@ -45,6 +46,7 @@ Google Meet、Teams、DiscordなどのWeb会議をOBS等でスクリーンレコ
 | simple-diarizer | 話者識別（SpeechBrain ECAPA-TDNN） |
 | torch / torchaudio | 機械学習基盤 |
 | opencv-python | 動画フレーム抽出 |
+| pyobjc-framework-Vision | macOS Vision OCR |
 
 `install.sh` が自動設定:
 
@@ -74,7 +76,7 @@ ffmpeg、Python依存パッケージは自動インストールされます。
 ### CLI
 
 ```bash
-# 最高精度（デフォルト: large-v3モデル）
+# デフォルト（mediumモデル）
 transcribe /path/to/video.mov
 
 # 話者数を指定（精度向上）
@@ -84,8 +86,9 @@ transcribe /path/to/video.mov --speakers 3
 transcribe /path/to/video.mov --fast
 
 # モデル指定
-transcribe /path/to/video.mov -m small  # 高速、精度やや低
-transcribe /path/to/video.mov -m medium # バランス型
+transcribe /path/to/video.mov -m small     # 高速、精度やや低
+transcribe /path/to/video.mov -m large-v3  # 最高精度、低速
+transcribe /path/to/video.mov -m turbo     # 高速かつ高精度
 ```
 
 ### 進行状況の監視
@@ -113,13 +116,12 @@ transcribe --watch
 
 ### モデル一覧
 
-| モデル | 精度 | 速度 | サイズ |
-|--------|------|------|--------|
-| small | ★★★☆☆ | 速い | 466MB |
-| medium | ★★★★☆ | やや遅い | 1.5GB |
-| large-v3 | ★★★★★ | 遅い | 3GB |
-
-※ デフォルトは `large-v3`（最高精度）
+| モデル | 精度 | 速度 | サイズ | 備考 |
+|--------|------|------|--------|------|
+| small | ★★★☆☆ | 速い | 466MB | |
+| medium | ★★★★☆ | やや遅い | 1.5GB | **デフォルト** |
+| large-v3 | ★★★★★ | 遅い | 3GB | 最高精度 |
+| turbo | ★★★★☆ | 速い | 1.5GB | 高速かつ高精度 |
 
 ## アンインストール
 

@@ -56,8 +56,8 @@ def ocr_image(image_path: str) -> list[str]:
 def extract_frame(
     video_path: str,
     timestamp_seconds: float,
-    output_path: str | None = None,
-) -> tuple[str, list[str]]:
+    output_dir: str | None = None,
+) -> tuple[str, list[str], str | None]:
     """
     Extract a frame from video at specified timestamp and save as JPEG.
     Also performs OCR on the frame.
@@ -65,10 +65,11 @@ def extract_frame(
     Args:
         video_path: Path to video file
         timestamp_seconds: Time in seconds to extract frame
-        output_path: Output path for the image (default: same dir as video)
+        output_dir: Output directory for organized files (creates frames/ subdir)
+                   If None, saves to /tmp (temporary)
 
     Returns:
-        Tuple of (path to saved JPEG image, list of OCR texts)
+        Tuple of (path to saved JPEG image, list of OCR texts, path to OCR text file or None)
     """
     video_path = Path(video_path)
     if not video_path.exists():
@@ -95,11 +96,18 @@ def extract_frame(
         if not ret:
             raise ValueError(f"Could not read frame at {timestamp_seconds}s")
 
-        # Determine output path (use /tmp by default)
-        if output_path is None:
-            output_path = Path("/tmp") / f"{video_path.stem}_frame_{int(timestamp_seconds)}s.jpg"
+        # Determine output path
+        timestamp_str = f"{int(timestamp_seconds):05d}"
+        if output_dir is not None:
+            # Organized output: create frames/ subdirectory
+            frames_dir = Path(output_dir) / "frames"
+            frames_dir.mkdir(parents=True, exist_ok=True)
+            output_path = frames_dir / f"frame_{timestamp_str}s.jpg"
+            ocr_path = frames_dir / f"frame_{timestamp_str}s_ocr.txt"
         else:
-            output_path = Path(output_path)
+            # Temporary output
+            output_path = Path("/tmp") / f"{video_path.stem}_frame_{timestamp_str}s.jpg"
+            ocr_path = None
 
         # Save as high-quality JPEG (no resize)
         cv2.imwrite(str(output_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
@@ -107,7 +115,11 @@ def extract_frame(
         # Perform OCR
         texts = ocr_image(str(output_path))
 
-        return str(output_path), texts
+        # Save OCR text if organized output
+        if ocr_path is not None and texts:
+            ocr_path.write_text("\n".join(texts), encoding="utf-8")
+
+        return str(output_path), texts, str(ocr_path) if ocr_path else None
 
     finally:
         cap.release()

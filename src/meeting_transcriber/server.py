@@ -34,12 +34,13 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="extract_video_frame",
-            description="動画から指定秒のフレームを抽出しJPEG画像として保存します。",
+            description="動画から指定秒のフレームを抽出しbase64画像として返します。",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス"},
-                    "timestamp_seconds": {"type": "number", "description": "抽出する時間（秒）"}
+                    "timestamp_seconds": {"type": "number", "description": "抽出する時間（秒）"},
+                    "output_dir": {"type": "string", "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）"}
                 },
                 "required": ["video_path", "timestamp_seconds"]
             }
@@ -66,6 +67,19 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["transcript_path"]
             }
+        ),
+        Tool(
+            name="finalize_meeting_files",
+            description="文字起こしファイルをタイトル付きディレクトリに整理します。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "元の動画ファイルのパス"},
+                    "title": {"type": "string", "description": "会議のタイトル（ディレクトリ名とファイル名に使用、日本語可）"},
+                    "transcript_path": {"type": "string", "description": "既存の文字起こしファイルのパス（省略時は自動検出）"}
+                },
+                "required": ["video_path", "title"]
+            }
         )
     ]
 
@@ -81,6 +95,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return handle_update_speaker_names(arguments)
         elif name == "read_transcript":
             return handle_read_transcript(arguments)
+        elif name == "finalize_meeting_files":
+            return handle_finalize_meeting_files(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
     except Exception as e:
@@ -111,14 +127,19 @@ async def handle_transcribe_meeting(arguments: dict) -> list[TextContent]:
 def handle_extract_video_frame(arguments: dict) -> list[TextContent]:
     video_path = arguments["video_path"]
     timestamp_seconds = arguments["timestamp_seconds"]
+    output_dir = arguments.get("output_dir")
     duration = get_video_duration(video_path)
-    output_path, ocr_texts = extract_frame(video_path, timestamp_seconds)
+    output_path, ocr_texts, ocr_path = extract_frame(video_path, timestamp_seconds, output_dir)
 
     ocr_section = ""
     if ocr_texts:
         ocr_section = "\n\n## 画面内テキスト（OCR）\n" + "\n".join(ocr_texts)
 
-    return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n画像パス: {output_path}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。")]
+    saved_info = f"画像パス: {output_path}"
+    if ocr_path:
+        saved_info += f"\nOCRテキスト: {ocr_path}"
+
+    return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n{saved_info}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。")]
 
 
 def handle_update_speaker_names(arguments: dict) -> list[TextContent]:
@@ -147,6 +168,52 @@ def handle_read_transcript(arguments: dict) -> list[TextContent]:
     if not path.exists():
         return [TextContent(type="text", text=f"ファイルが見つかりません: {path}")]
     return [TextContent(type="text", text=path.read_text(encoding="utf-8"))]
+
+
+def handle_finalize_meeting_files(arguments: dict) -> list[TextContent]:
+    video_path = Path(arguments["video_path"])
+    title = arguments["title"]
+    transcript_path = arguments.get("transcript_path")
+
+    if not video_path.exists():
+        return [TextContent(type="text", text=f"動画ファイルが見つかりません: {video_path}")]
+
+    video_stem = video_path.stem
+    video_dir = video_path.parent
+
+    # タイトルからファイル名に使えない文字を除去
+    safe_title = re.sub(r'[<>:"/\\|?*]', '', title).strip()
+    if not safe_title:
+        return [TextContent(type="text", text="タイトルが無効です")]
+
+    # ディレクトリ作成
+    output_dir = video_dir / f"{video_stem}_{safe_title}"
+    output_dir.mkdir(exist_ok=True)
+
+    # 文字起こしファイルの移動
+    if transcript_path is None:
+        transcript_path = video_dir / f"{video_stem}_transcript.txt"
+    else:
+        transcript_path = Path(transcript_path)
+
+    new_transcript_path = output_dir / f"{video_stem}_transcript_{safe_title}.txt"
+    new_minutes_path = output_dir / f"{video_stem}_minutes_{safe_title}.md"
+
+    if transcript_path.exists():
+        content = transcript_path.read_text(encoding="utf-8")
+        new_transcript_path.write_text(content, encoding="utf-8")
+        transcript_path.unlink()  # 元ファイルを削除
+        moved_msg = f"文字起こしファイルを移動しました: {new_transcript_path}"
+    else:
+        moved_msg = f"文字起こしファイルが見つかりません: {transcript_path}"
+
+    return [TextContent(type="text", text=f"""整理完了
+
+ディレクトリ: {output_dir}
+{moved_msg}
+議事録ファイルパス: {new_minutes_path}
+
+議事録を作成する場合は、上記パスに保存してください。""")]
 
 
 def run():
