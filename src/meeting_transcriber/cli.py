@@ -146,7 +146,7 @@ def main():
     parser.add_argument(
         "-m", "--model",
         default="medium",
-        choices=["small", "medium", "large", "large-v3", "turbo"],
+        choices=["small-4bit", "small", "medium", "large-v3"],
         help="Whisperモデルサイズ (default: medium)"
     )
     parser.add_argument(

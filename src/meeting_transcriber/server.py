@@ -27,7 +27,7 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス（絶対パス）"},
                     "output_path": {"type": "string", "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）"},
-                    "model": {"type": "string", "description": "Whisperモデル (small/medium/large/large-v3/turbo)", "default": "medium"}
+                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3)", "default": "medium"}
                 },
                 "required": ["video_path"]
             }

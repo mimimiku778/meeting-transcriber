@@ -1,61 +1,71 @@
 # Meeting Transcriber
 
-Web会議の録画動画から話者識別付き議事録を作成するMCPサーバー & CLIツール。
+macOS (Apple Silicon) 専用のClaude Codeスキル + MCPサーバー。
 
-## 構成
+OBSなどで録画したGoogle Meet / Teams / Zoom / Discord等の会議動画から、**話者識別付きの文字起こし**を生成し、議事録・要約・Q&A抽出など指定したフォーマットでMarkdown文書を作成する。
 
-**スキル:** `/transcribe-meeting` - 対話的に議事録作成をガイド
+## 特徴
 
-**MCPツール:** `transcribe_meeting`（文字起こし+話者識別）, `extract_video_frame`（フレーム+OCR）, `update_speaker_names`, `read_transcript`
+- **話者識別**: 誰が何を言ったかを自動判別（SpeechBrain）
+- **Apple Silicon最適化**: mlx-Whisperで高速な音声認識
+- **画面キャプチャ**: 動画フレームを画像として抽出し、Claudeが視覚的に内容を理解。Apple Vision OCRで参加者名や共有画面のテキストも高速・高精度に抽出
 
-**技術:** mlx-Whisper（音声認識）, SpeechBrain（話者識別）, macOS Vision（OCR）
+## 使用技術
 
-## 動作フロー
+| 技術 | 用途 |
+|------|------|
+| mlx-Whisper | 音声認識（Apple Silicon最適化） |
+| SpeechBrain | 話者識別（ECAPA-TDNN） |
+| macOS Vision | 画面OCR |
+| ffmpeg | 音声抽出 |
+
+## 使い方
+
+### Claude Code（対話的に議事録作成）
 
 ```
-ユーザー: 「/path/to/meeting.mp4 の議事録を作成して」
-    ↓
-[文字起こし + 話者識別]
-    ↓
-出力: /path/to/meeting_transcript.txt
-    発話者1 (00:15)
-    それでは会議を始めます。
-
-    発話者2 (00:23)
-    よろしくお願いします。
-    ↓
-[次のアクション選択]
-  A. 議事録を作成 → 動画フレームから名前取得、誤字修正、議事録生成
-  B. 発話者名のみ更新 → 動画フレームから名前取得して置換
+/transcribe-meeting
 ```
 
-## 必要環境
+起動すると3つのモードから選択:
 
-- macOS (Apple Silicon)
-- Python 3.10+
-- Homebrew
+```
+A. 新しい動画を文字起こしする
+B. 既存の議事録を編集・更新する
+C. 過去の議事録を検索・まとめ生成する
+```
 
-## 依存関係
+**A. 新規文字起こし:**
+動画指定 → モデル選択 → 文字起こし実行 → 自動でタイトル付きフォルダに整理 → 発話者名を画面から取得して置換 → 議事録生成
 
-`install.sh` が以下を自動インストール:
+**B. 既存編集:**
+フォルダ指定 → 議事録の修正/再生成/誤字修正/フレーム追加抽出
 
-| パッケージ | 用途 |
-|-----------|------|
-| ffmpeg | 動画から音声抽出 |
-| mlx-whisper | 音声→テキスト変換（Apple Silicon最適化） |
-| simple-diarizer | 話者識別（SpeechBrain ECAPA-TDNN） |
-| torch / torchaudio | 機械学習基盤 |
-| opencv-python | 動画フレーム抽出 |
-| pyobjc-framework-Vision | macOS Vision OCR |
+**C. 検索:**
+複数の会議を横断してキーワード検索 → 該当箇所と動画/音声のタイムスタンプを特定 → 複数議事録からまとめ生成
 
-`install.sh` が自動設定:
+### CLI（文字起こしのみ）
 
-- Claude Code: MCPサーバー + `/transcribe-meeting` スキル
-- CLI: `transcribe` コマンド
+```bash
+transcribe /path/to/video.mov              # デフォルト(medium)
+transcribe /path/to/video.mov -m small-4bit # 最速
+transcribe /path/to/video.mov --speakers 3  # 話者数指定で精度向上
+```
 
-## セットアップ
+出力: `video_transcript.txt`（話者識別付きテキスト）
 
-### 1. インストール
+## モデル
+
+| モデル | サイズ | 特徴 |
+|--------|--------|------|
+| small-4bit | ~120MB | 最速 |
+| small | 466MB | 高速 |
+| medium | 1.5GB | バランス（デフォルト） |
+| large-v3 | 3GB | 最高精度 |
+
+※ M4 Max 64GBでmediumモデル使用時、1時間の動画で約5〜10分程度
+
+## インストール
 
 ```bash
 git clone <repo-url>
@@ -63,77 +73,48 @@ cd meeting-transcriber
 ./install.sh
 ```
 
-ffmpeg、Python依存パッケージは自動インストールされます。
-
-## 使い方
-
-### Claude Code
-
-```
-/transcribe-meeting /path/to/video.mov
-```
-
-### CLI
-
-```bash
-# デフォルト（mediumモデル）
-transcribe /path/to/video.mov
-
-# 話者数を指定（精度向上）
-transcribe /path/to/video.mov --speakers 3
-
-# 速度優先モード
-transcribe /path/to/video.mov --fast
-
-# モデル指定
-transcribe /path/to/video.mov -m small     # 高速、精度やや低
-transcribe /path/to/video.mov -m large-v3  # 最高精度、低速
-transcribe /path/to/video.mov -m turbo     # 高速かつ高精度
-```
-
-### 進行状況の監視
-
-Claude CodeでMCPツール実行中は進行状況が見えません。別のターミナルで監視コマンドを実行すると、リアルタイムでプログレスバーが表示されます。
-
-```bash
-# 別のターミナルで実行
-transcribe --watch
-```
-
-表示例:
-```
-📡 MCPサーバーの進行状況を監視中... (Ctrl+C で終了)
-
-⏳ [██████████░░░░░░░░░░░░░░░░░░░░] 1/2 - Whisper (medium) で文字起こし中... (45秒)
-```
-
-処理が完了すると:
-```
-✅ [██████████████████████████████] 2/2 - 完了 (120秒)
-
-処理が完了しました！
-```
-
-### モデル一覧
-
-| モデル | 精度 | 速度 | サイズ | 備考 |
-|--------|------|------|--------|------|
-| small | ★★★☆☆ | 速い | 466MB | |
-| medium | ★★★★☆ | やや遅い | 1.5GB | **デフォルト** |
-| large-v3 | ★★★★★ | 遅い | 3GB | 最高精度 |
-| turbo | ★★★★☆ | 速い | 1.5GB | 高速かつ高精度 |
+自動で以下を設定:
+- ffmpeg（Homebrew）
+- Python依存パッケージ（venv内）
+- Claude Code MCPサーバー + スキル
+- `transcribe` CLIコマンド
 
 ## アンインストール
 
 ```bash
-# Claude Code
+# MCPサーバー削除
 claude mcp remove meeting-transcriber -s user
+
+# スキル削除
 rm ~/.claude/commands/transcribe-meeting.md
 
-# CLI
+# CLIコマンド削除
 rm ~/.local/bin/transcribe
+
+# リポジトリ削除（必要に応じて）
+rm -rf /path/to/meeting-transcriber
 ```
 
-## ライセンス
+## 構成
 
-MIT
+```
+~/.claude/commands/transcribe-meeting.md  # スキル定義
+    ↓ 呼び出し
+MCPサーバー (meeting-transcriber)
+    ├── transcribe_meeting     # 文字起こし + 話者識別
+    ├── extract_video_frame    # フレーム抽出 + OCR
+    ├── update_speaker_names   # 発話者名置換
+    ├── read_transcript        # 文字起こし読み込み
+    └── finalize_meeting_files # ファイル整理
+```
+
+## ファイル構成
+
+```
+src/meeting_transcriber/
+  server.py        # MCPサーバー
+  cli.py           # CLIエントリーポイント
+  transcriber.py   # mlx-Whisper文字起こし
+  diarization.py   # SpeechBrain話者識別
+  frame_extractor.py # OpenCV + Vision OCR
+```

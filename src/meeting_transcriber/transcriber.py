@@ -7,12 +7,10 @@ from pathlib import Path
 import mlx_whisper
 
 MLX_MODELS = {
-    "tiny": "mlx-community/whisper-tiny-mlx",
-    "base": "mlx-community/whisper-base-mlx",
+    "small-4bit": "mlx-community/whisper-small-mlx-4bit",
     "small": "mlx-community/whisper-small-mlx",
     "medium": "mlx-community/whisper-medium-mlx",
     "large-v3": "mlx-community/whisper-large-v3-mlx",
-    "turbo": "mlx-community/whisper-large-v3-turbo",
 }
 
 JAPANESE_MEETING_PROMPT = """これは日本語の会議の文字起こしです。
