@@ -34,7 +34,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="extract_video_frame",
-            description="動画から指定秒のフレームを抽出しbase64画像として返します。",
+            description="動画から指定秒のフレームを抽出しJPEG画像として保存します。",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -112,8 +112,13 @@ def handle_extract_video_frame(arguments: dict) -> list[TextContent]:
     video_path = arguments["video_path"]
     timestamp_seconds = arguments["timestamp_seconds"]
     duration = get_video_duration(video_path)
-    base64_image = extract_frame(video_path, timestamp_seconds)
-    return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\ndata:image/jpeg;base64,{base64_image}")]
+    output_path, ocr_texts = extract_frame(video_path, timestamp_seconds)
+
+    ocr_section = ""
+    if ocr_texts:
+        ocr_section = "\n\n## 画面内テキスト（OCR）\n" + "\n".join(ocr_texts)
+
+    return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n画像パス: {output_path}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。")]
 
 
 def handle_update_speaker_names(arguments: dict) -> list[TextContent]:
