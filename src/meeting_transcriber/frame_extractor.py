@@ -95,9 +95,9 @@ def extract_frame(
         if not ret:
             raise ValueError(f"Could not read frame at {timestamp_seconds}s")
 
-        # Determine output path
+        # Determine output path (use /tmp by default)
         if output_path is None:
-            output_path = video_path.parent / f"{video_path.stem}_frame_{int(timestamp_seconds)}s.jpg"
+            output_path = Path("/tmp") / f"{video_path.stem}_frame_{int(timestamp_seconds)}s.jpg"
         else:
             output_path = Path(output_path)
 
