@@ -62,11 +62,10 @@ def kill_all_transcribe():
     killed_transcribe = []
     killed_mcp = []
 
-    # Patterns to search for (don't include generic "transcribe" to avoid killing watch/kill)
+    # "transcribe" pattern matches the CLI process itself.
+    # should_skip_process() filters out --watch, --kill, and tail processes.
     patterns = [
-        ("mlx_whisper", killed_transcribe),
-        ("simple_diarizer", killed_transcribe),
-        ("speechbrain", killed_transcribe),
+        ("transcribe", killed_transcribe),
         ("meeting-transcriber", killed_mcp),
         ("mcp-server", killed_mcp),
     ]
@@ -89,7 +88,7 @@ def kill_all_transcribe():
                     if should_skip_process(pid, current_pid):
                         continue
                     try:
-                        os.kill(pid, signal.SIGTERM)
+                        os.kill(pid, signal.SIGKILL)
                         killed_list.append(pid)
                         all_killed.add(pid)
                     except ProcessLookupError:
