@@ -27,7 +27,8 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス（絶対パス）"},
                     "output_path": {"type": "string", "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）"},
-                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3)", "default": "medium"}
+                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3)", "default": "medium"},
+                    "diarization_v2": {"type": "boolean", "description": "pyannote.audio ベースの高精度話者識別を使用", "default": False}
                 },
                 "required": ["video_path"]
             }
@@ -108,9 +109,13 @@ async def handle_transcribe_meeting(arguments: dict) -> list[TextContent]:
     output_path = arguments.get("output_path")
     model = arguments.get("model", "medium")
 
+    diarization_v2 = arguments.get("diarization_v2", False)
+
     cmd = ["transcribe", video_path, "-m", model]
     if output_path:
         cmd.extend(["-o", output_path])
+    if diarization_v2:
+        cmd.append("--diarization-v2")
 
     LOG_FILE.write_text("")
     with open(LOG_FILE, "w") as log_file:
