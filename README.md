@@ -81,6 +81,16 @@ cd meeting-transcriber
 - Claude Code MCPサーバー + スキル
 - `transcribe` CLIコマンド
 
+## アップデート
+
+```bash
+cd ~/.claude/mcp-servers/meeting-transcriber
+git pull
+./install.sh
+```
+
+Claude Codeを再起動してMCPサーバーを反映。
+
 ## アンインストール
 
 ```bash
