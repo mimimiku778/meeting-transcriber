@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 from .transcriber import transcribe_video, format_timestamp
-from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
 
 LOG_FILE = Path("/tmp/meeting-transcriber.log")
 
@@ -164,6 +163,11 @@ def main():
         default=None,
         help="話者数を指定（精度向上）"
     )
+    parser.add_argument(
+        "--diarization-v2",
+        action="store_true",
+        help="pyannote.audio ベースの高精度話者識別を使用"
+    )
 
     args = parser.parse_args()
 
@@ -195,15 +199,24 @@ def main():
     max_accuracy = not args.fast
     mode = "速度優先" if args.fast else "最高精度"
 
-    print(f"動画: {video_path}")
-    print(f"出力: {output_path}")
-    print(f"モデル: {args.model} ({mode})")
-    print()
+    diarization_mode = "pyannote.audio v2" if args.diarization_v2 else "simple-diarizer"
+
+    print(f"動画: {video_path}", flush=True)
+    print(f"出力: {output_path}", flush=True)
+    print(f"モデル: {args.model} ({mode})", flush=True)
+    print(f"話者識別: {diarization_mode}", flush=True)
+    print(flush=True)
 
     # Step 1: Transcribe
-    print("1/3 音声抽出・文字起こし中...")
+    print("1/3 音声抽出・文字起こし中...", flush=True)
     whisper_result, audio_path = transcribe_video(str(video_path), args.model, max_accuracy)
-    print(f"    完了 ({len(whisper_result.get('segments', []))} セグメント)")
+    print(f"    完了 ({len(whisper_result.get('segments', []))} セグメント)", flush=True)
+
+    # Import diarization module based on --diarization-v2 flag
+    if args.diarization_v2:
+        from .diarization_v2 import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
+    else:
+        from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
 
     # Step 2: Speaker diarization
     if args.no_diarization:
@@ -218,15 +231,17 @@ def main():
             for seg in whisper_result.get("segments", [])
         ]
     else:
-        print("2/3 話者識別中...")
+        print("2/3 話者識別中...", flush=True)
+        print("    モデル読み込み中...", flush=True)
         pipeline = load_diarization_pipeline()
+        print("    解析中...", flush=True)
         diarization_segments = diarize_audio(audio_path, pipeline, num_speakers=args.speakers)
         segments_with_speakers = assign_speakers_to_segments(whisper_result, diarization_segments)
         unique_speakers = sorted(set(seg["speaker"] for seg in segments_with_speakers if seg["speaker"] != "不明"))
-        print(f"    完了 (話者: {', '.join(unique_speakers)})")
+        print(f"    完了 (話者: {', '.join(unique_speakers)})", flush=True)
 
     # Step 3: Format and save
-    print("3/3 テキスト生成中...")
+    print("3/3 テキスト生成中...", flush=True)
     output_lines = []
     current_speaker = None
     current_text_parts = []
@@ -257,9 +272,9 @@ def main():
     output_text = "\n".join(output_lines)
     output_path.write_text(output_text, encoding="utf-8")
 
-    print(f"    完了")
-    print()
-    print(f"出力ファイル: {output_path}")
+    print(f"    完了", flush=True)
+    print(flush=True)
+    print(f"出力ファイル: {output_path}", flush=True)
 
 
 if __name__ == "__main__":

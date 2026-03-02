@@ -25,10 +25,10 @@ dependencies = [
     "mcp>=1.0.0",
     "mlx-whisper>=0.4.0",
     "simple-diarizer>=0.0.13",
+    "pyannote.audio>=3.1",
     "opencv-python>=4.8.0",
     "torch==2.8.0",
     "torchaudio==2.8.0",
-    "huggingface_hub<0.24",  # speechbrain 1.0.3 uses deprecated use_auth_token
     "pyobjc-framework-Vision>=10.0",
     "pyobjc-framework-Quartz>=10.0",
 ]

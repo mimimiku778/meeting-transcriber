@@ -156,6 +156,10 @@ C. 過去の議事録を検索・まとめ生成する
   medium     バランス型（1.5GB）← デフォルト
   large-v3   最高精度・低速（3GB）
 
+🎙️ 話者識別:
+  simple-diarizer  従来版・高速
+  pyannote.audio   v2・高精度 ← デフォルト
+
 💡 別ターミナルで使えるコマンド:
   transcribe --watch  進行状況をリアルタイム表示
   transcribe --kill   強制終了 & MCP再起動
@@ -196,12 +200,19 @@ C. 過去の議事録を検索・まとめ生成する
 4. large-v3 - 最高精度、低速（3GB）
 
 番号またはモデル名を入力（Enterでmedium）:
+
+話者識別:
+1. simple-diarizer（従来版・高速）
+2. pyannote.audio v2（高精度）← デフォルト
+
+番号を入力（Enterでv2）:
 ```
 
 ### Step 2: 文字起こし実行
 ユーザーの選択を受けてから `transcribe_meeting` ツールを呼び出してください。
 - video_path: ユーザーが指定したパス
 - model: ユーザーが選択したモデル（未指定なら "medium"）
+- diarization_v2: ユーザーが選択した話者識別方式（未指定なら true = pyannote.audio v2）
 
 ### Step 3: ファイル整理
 文字起こしが完了したら:
