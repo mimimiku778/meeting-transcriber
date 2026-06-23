@@ -27,8 +27,9 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス（絶対パス）"},
                     "output_path": {"type": "string", "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）"},
-                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3)", "default": "medium"},
-                    "diarization_v2": {"type": "boolean", "description": "pyannote.audio ベースの高精度話者識別を使用", "default": False}
+                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3/large-v3-turbo)", "default": "large-v3-turbo"},
+                    "diarization_v2": {"type": "boolean", "description": "pyannote.audio ベースの高精度話者識別（既定）。Falseで従来simple-diarizer", "default": True},
+                    "context_path": {"type": "string", "description": "案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し文字起こし後に決定的正規化を適用"}
                 },
                 "required": ["video_path"]
             }
@@ -107,15 +108,18 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 async def handle_transcribe_meeting(arguments: dict) -> list[TextContent]:
     video_path = arguments["video_path"]
     output_path = arguments.get("output_path")
-    model = arguments.get("model", "medium")
+    model = arguments.get("model", "large-v3-turbo")
+    context_path = arguments.get("context_path")
 
-    diarization_v2 = arguments.get("diarization_v2", False)
+    diarization_v2 = arguments.get("diarization_v2", True)
 
     cmd = ["transcribe", video_path, "-m", model]
     if output_path:
         cmd.extend(["-o", output_path])
-    if diarization_v2:
-        cmd.append("--diarization-v2")
+    if not diarization_v2:
+        cmd.append("--diarization-v1")
+    if context_path:
+        cmd.extend(["--context", context_path])
 
     LOG_FILE.write_text("")
     with open(LOG_FILE, "w") as log_file:

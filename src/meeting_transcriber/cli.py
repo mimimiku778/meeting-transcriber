@@ -10,7 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .transcriber import transcribe_video, format_timestamp
+from .transcriber import transcribe_video, format_timestamp, DEFAULT_MODEL
+from .context_loader import load_context, asr_glossary, apply_normalization
 
 LOG_FILE = Path("/tmp/meeting-transcriber.log")
 
@@ -143,9 +144,20 @@ def main():
     )
     parser.add_argument(
         "-m", "--model",
-        default="medium",
-        choices=["small-4bit", "small", "medium", "large-v3"],
-        help="Whisperモデルサイズ (default: medium)"
+        default=DEFAULT_MODEL,
+        choices=["small-4bit", "small", "medium", "large-v3", "large-v3-turbo"],
+        help=f"Whisperモデルサイズ (default: {DEFAULT_MODEL})"
+    )
+    parser.add_argument(
+        "--context",
+        help="案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し、"
+             "文字起こし後に決定的(辞書)正規化を適用する"
+    )
+    parser.add_argument(
+        "--normalize",
+        metavar="TRANSCRIPT",
+        help="既存の文字起こしファイルに --context の決定的正規化のみを適用して保存し終了"
+             "（再文字起こし不要の再処理用）"
     )
     parser.add_argument(
         "--fast",
@@ -166,7 +178,12 @@ def main():
     parser.add_argument(
         "--diarization-v2",
         action="store_true",
-        help="pyannote.audio ベースの高精度話者識別を使用"
+        help="（既定）pyannote.audio ベースの高精度話者識別。現在はこちらが標準"
+    )
+    parser.add_argument(
+        "--diarization-v1",
+        action="store_true",
+        help="従来の simple-diarizer を使用（注: huggingface_hub 1.x では非互換の場合あり）"
     )
 
     args = parser.parse_args()
@@ -179,6 +196,22 @@ def main():
     # Kill mode
     if args.kill:
         kill_all_transcribe()
+        return
+
+    # Normalize-only mode: 既存transcriptに決定的正規化を適用して終了
+    if args.normalize:
+        if not args.context:
+            parser.error("--normalize には --context が必要です")
+        transcript_path = Path(args.normalize)
+        if not transcript_path.exists():
+            print(f"エラー: ファイルが見つかりません: {transcript_path}", file=sys.stderr)
+            sys.exit(1)
+        context = load_context(args.context)
+        text = transcript_path.read_text(encoding="utf-8")
+        text, report = apply_normalization(text, context)
+        transcript_path.write_text(text, encoding="utf-8")
+        print(f"正規化適用: {transcript_path}")
+        print("\n".join(report) if report else "置換対象なし")
         return
 
     # Normal transcription mode requires video_path
@@ -199,21 +232,29 @@ def main():
     max_accuracy = not args.fast
     mode = "速度優先" if args.fast else "最高精度"
 
-    diarization_mode = "pyannote.audio v2" if args.diarization_v2 else "simple-diarizer"
+    # v2(pyannote)を既定とし、--diarization-v1 指定時のみ従来版
+    use_v2 = not args.diarization_v1
+    diarization_mode = "pyannote.audio v2" if use_v2 else "simple-diarizer (v1)"
+
+    # 案件コンテキスト（任意）: ASR固有名詞 + 文字起こし後の決定的正規化
+    context = load_context(args.context) if args.context else None
+    glossary = asr_glossary(context) if context else None
 
     print(f"動画: {video_path}", flush=True)
     print(f"出力: {output_path}", flush=True)
     print(f"モデル: {args.model} ({mode})", flush=True)
     print(f"話者識別: {diarization_mode}", flush=True)
+    if context:
+        print(f"案件コンテキスト: {args.context}（固有名詞 {len(glossary)} 件）", flush=True)
     print(flush=True)
 
     # Step 1: Transcribe
     print("1/3 音声抽出・文字起こし中...", flush=True)
-    whisper_result, audio_path = transcribe_video(str(video_path), args.model, max_accuracy)
+    whisper_result, audio_path = transcribe_video(str(video_path), args.model, max_accuracy, glossary)
     print(f"    完了 ({len(whisper_result.get('segments', []))} セグメント)", flush=True)
 
-    # Import diarization module based on --diarization-v2 flag
-    if args.diarization_v2:
+    # Import diarization module (v2=pyannote が既定)
+    if use_v2:
         from .diarization_v2 import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
     else:
         from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
@@ -270,6 +311,13 @@ def main():
         output_lines.append("")
 
     output_text = "\n".join(output_lines)
+
+    # 決定的(辞書)正規化: 曖昧さの無い表記ゆれのみ機械置換（文脈依存はClaude校正へ）
+    if context:
+        output_text, norm_report = apply_normalization(output_text, context)
+        if norm_report:
+            print(f"    正規化: {', '.join(norm_report)}", flush=True)
+
     output_path.write_text(output_text, encoding="utf-8")
 
     print(f"    完了", flush=True)

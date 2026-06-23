@@ -48,10 +48,14 @@ C. 過去の議事録を検索・まとめ生成する
 ### CLI（文字起こしのみ）
 
 ```bash
-transcribe /path/to/video.mov                          # デフォルト(medium + simple-diarizer)
-transcribe /path/to/video.mov --diarization-v2          # pyannote.audio v2で高精度話者識別
-transcribe /path/to/video.mov --diarization-v2 --speakers 3  # 話者数指定でさらに精度向上
-transcribe /path/to/video.mov -m small-4bit             # 最速
+transcribe /path/to/video.mov                          # デフォルト(large-v3-turbo + pyannote v2)
+transcribe /path/to/video.mov --context dir/project.context.yaml  # 案件用語集の注入＋決定的正規化
+transcribe /path/to/video.mov --speakers 3             # 話者数指定でさらに精度向上
+transcribe /path/to/video.mov --diarization-v1         # 従来simple-diarizer（フォールバック）
+transcribe /path/to/video.mov -m small-4bit            # 最速
+
+# 再文字起こし不要で、既存transcriptに決定的正規化だけ適用
+transcribe --normalize dir/xxx_transcript.txt --context dir/project.context.yaml
 ```
 
 出力: `video_transcript.txt`（話者識別付きテキスト）
@@ -62,10 +66,34 @@ transcribe /path/to/video.mov -m small-4bit             # 最速
 |--------|--------|------|
 | small-4bit | ~120MB | 最速 |
 | small | 466MB | 高速 |
-| medium | 1.5GB | バランス（デフォルト） |
-| large-v3 | 3GB | 最高精度 |
+| medium | 1.5GB | 軽量 |
+| large-v3 | 3GB | 最高精度・低速 |
+| **large-v3-turbo** | ~1.6GB | **large並み精度をmedium並みの速度で（デフォルト）** |
 
-※ M4 Max 64GBでmediumモデル使用時、1時間の動画で約5〜10分程度
+※ 日本語会議では large-v3-turbo が精度・速度のバランスで最良（雑音・複数話者環境のローカルモデル中トップ）。
+  4bit量子化は日本語で精度劣化が大きいため非推奨。
+
+## 案件コンテキストと帰属精度（重要）
+
+議事録の「決定/宿題/課題」の区別や担当（自社/クライアント/エンドユーザー）がズレる主因は、
+**誰がどの会社かを音声/文字だけからは復元できない**こと。会議ディレクトリに `project.context.yaml`
+（雛形: `templates/project.context.template.yaml`）を置くと:
+
+- 固有名詞（社名・略号・人名・専門用語）が ASR の `initial_prompt` に注入される
+- 文字起こし後に**決定的(辞書)正規化**（曖昧さの無い表記ゆれのみ）が適用される
+- 議事録生成時、Claude が組織図・話者ロスター・帰属ルールに従い、各項目に
+  **担当会社(enum) / 種別(決定·宿題·課題) / 根拠(話者+時刻+逐語引用)** を付け、
+  確証の無い帰属は推測せず UNKNOWN として差し出す（スキル Step A-3〜A-5）
+
+**組織構造・話者↔会社は動画フレーム（参加者パネルの会社プレフィックス、共有資料のロゴ/宛先）
+の確定事実から作る。略号を音から推測で読み替えない。**
+
+## 話者識別と HF_TOKEN
+
+既定の pyannote v2 はgatedモデル（`speaker-diarization-community-1`、未取得時は `3.1` にフォールバック）。
+初回はモデルのキャッシュが必要で、未キャッシュ環境では huggingface.co で利用規約に同意し
+`HF_TOKEN` を環境変数で渡す（MCP登録時は `-e HF_TOKEN=...`）。既にキャッシュ済みならトークン無しで動作する。
+MPS は既定で無効（タイムスタンプ崩れの報告があるため）。使う場合は `MEETING_DIARIZER_DEVICE=mps`。
 
 ## インストール
 
@@ -126,8 +154,11 @@ MCPサーバー (meeting-transcriber)
 src/meeting_transcriber/
   server.py          # MCPサーバー
   cli.py             # CLIエントリーポイント
-  transcriber.py     # mlx-Whisper文字起こし
-  diarization.py     # SpeechBrain話者識別（v1・従来版）
-  diarization_v2.py  # pyannote.audio話者識別（v2・高精度）
+  transcriber.py     # mlx-Whisper文字起こし（turbo + ハルシネーション抑制 + 用語集注入）
+  context_loader.py  # project.context.yaml → 用語集/決定的正規化/組織コンテキスト展開
+  diarization.py     # SpeechBrain話者識別（v1・フォールバック）
+  diarization_v2.py  # pyannote.audio話者識別（v2・既定・word単位多数決）
   frame_extractor.py # OpenCV + Vision OCR
+templates/
+  project.context.template.yaml  # 案件コンテキストの雛形
 ```

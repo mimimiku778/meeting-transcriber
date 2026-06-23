@@ -31,6 +31,7 @@ dependencies = [
     "torchaudio==2.8.0",
     "pyobjc-framework-Vision>=10.0",
     "pyobjc-framework-Quartz>=10.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]

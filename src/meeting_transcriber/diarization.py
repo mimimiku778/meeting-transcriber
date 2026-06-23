@@ -1,4 +1,9 @@
-"""Speaker diarization module using SpeechBrain (simple-diarizer)."""
+"""Speaker diarization module using SpeechBrain (simple-diarizer).
+
+注: 既定の話者識別は pyannote v2(diarization_v2.py)。本モジュールは --diarization-v1 用の
+フォールバック。speechbrain 1.0.x は廃止された use_auth_token を hf_hub_download に渡すため、
+huggingface_hub>=1.0 環境では下記の互換シムで token へ変換しないと TypeError で落ちる。
+"""
 
 import os
 from pathlib import Path
@@ -8,10 +13,29 @@ from simple_diarizer.diarizer import Diarizer
 _diarizer = None
 
 
+def _patch_hf_use_auth_token() -> None:
+    """speechbrain が渡す use_auth_token を huggingface_hub>=1.0 の token へ変換する。"""
+    import huggingface_hub as hf
+    if getattr(hf.hf_hub_download, "_mt_patched", False):
+        return
+    _orig = hf.hf_hub_download
+
+    def _wrapped(*args, **kwargs):
+        if "use_auth_token" in kwargs:
+            tok = kwargs.pop("use_auth_token")
+            if tok and "token" not in kwargs:
+                kwargs["token"] = tok
+        return _orig(*args, **kwargs)
+
+    _wrapped._mt_patched = True
+    hf.hf_hub_download = _wrapped
+
+
 def load_diarization_pipeline() -> Diarizer:
     """Load SpeechBrain-based diarizer (faster than pyannote)."""
     global _diarizer
     if _diarizer is None:
+        _patch_hf_use_auth_token()
         # Set model cache directory to user's home to avoid read-only filesystem issues
         cache_dir = Path.home() / ".cache" / "meeting-transcriber" / "models"
         cache_dir.mkdir(parents=True, exist_ok=True)
