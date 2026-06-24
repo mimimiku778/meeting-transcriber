@@ -158,8 +158,8 @@ C. 過去の議事録を検索・まとめ生成する
   ※ --fast を付けると精度最適化（抑制パラメータ＋用語集）は無効になる
 
 🎙️ 話者識別:
-  pyannote.audio v2  高精度 ← デフォルト（初回のみ要HF_TOKEN、キャッシュ後は不要）
-  simple-diarizer    従来版（--diarization-v1）※huggingface_hub 1.x では非互換の場合あり
+  speakrs         Apple Silicon CoreML・最速 ← デフォルト
+  pyannote.audio  同モデル・CPUで低速（--diarizer pyannote。初回のみ要HF_TOKEN）
 
 📇 案件コンテキスト（任意・強く推奨）:
   会議ディレクトリの project.context.yaml に組織図・話者・用語集を置くと
