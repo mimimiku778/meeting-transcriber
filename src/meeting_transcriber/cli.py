@@ -196,6 +196,24 @@ def main():
              "『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま"
     )
     parser.add_argument(
+        "--project",
+        metavar="SLUG",
+        default=None,
+        help="案件スラッグ。~/.claude/meeting-contexts/<SLUG>.yaml を --context として使い、"
+             "同名の声紋プロファイルも自動で照合する（声紋と案件ストアを同一slugで連結）"
+    )
+    parser.add_argument(
+        "--no-speaker-hints",
+        action="store_true",
+        help="話者同一性ヒント（声紋クラスタ類似度・統合候補・混在検出）の算出をスキップ"
+    )
+    parser.add_argument(
+        "--resolve-speakers",
+        action="store_true",
+        help="文字起こしせず、話者同一性ヒント（声紋クラスタ類似度・統合候補・混在検出・区間照合）だけを"
+             "算出して <video>_speakers.json に保存して終了する"
+    )
+    parser.add_argument(
         "--enroll",
         metavar="JSON",
         default=None,
@@ -264,7 +282,14 @@ def main():
             parser.error(f"--enroll のJSONを解釈できません: {e}")
 
         from .transcriber import extract_audio
-        from .diarization_v2 import load_diarization_pipeline, diarize_audio
+        # diarization は transcribe と同じバックエンド（既定 speakrs）に揃える。
+        # pyannote(CPU)で再diarizationすると遅い上、transcribeと話者ラベルの採番がズレて
+        # 声紋が誤対応する。speakrs に揃えることで高速化＋ラベル整合を両立する。
+        backend = resolve_diarizer_backend(args)
+        if backend == "pyannote":
+            from .diarization_v2 import load_diarization_pipeline, diarize_audio
+        else:
+            from .diarization_speakrs import load_diarization_pipeline, diarize_audio
         from .voiceprint import enroll, db_path
         import tempfile
         audio_path = str(Path(tempfile.gettempdir()) / "meeting_transcriber" / f"{enroll_video.stem}.wav")
@@ -280,6 +305,71 @@ def main():
         print(f"声紋登録完了: {db_path(args.voiceprints)}")
         for name, info in report.items():
             print(f"  {name}: {info}")
+        return
+
+    # Resolve-speakers mode: 文字起こしせず、話者同一性ヒントだけ算出してサイドカーへ保存
+    if args.resolve_speakers:
+        if not args.video_path:
+            parser.error("--resolve-speakers には動画ファイルのパスが必要です")
+        rv = Path(args.video_path).resolve()
+        if not rv.exists():
+            print(f"エラー: ファイルが見つかりません: {rv}", file=sys.stderr)
+            sys.exit(1)
+
+        # 案件 → 声紋プロファイル/コンテキスト解決（--project 指定時）
+        voiceprint_profile = args.voiceprints
+        context = None
+        if args.project:
+            from .context_store import store_path, load_project
+            proj = load_project(args.project)
+            if proj:
+                if not voiceprint_profile:
+                    voiceprint_profile = proj.get("voiceprint_profile") or args.project
+                context = load_context(str(store_path(args.project)))
+
+        from .transcriber import extract_audio
+        import tempfile
+        import json as _json
+        audio_path = str(Path(tempfile.gettempdir()) / "meeting_transcriber" / f"{rv.stem}.wav")
+        Path(audio_path).parent.mkdir(exist_ok=True)
+        print("話者ヒント: 音声抽出中...", flush=True)
+        extract_audio(str(rv), audio_path)
+
+        backend = resolve_diarizer_backend(args)
+        if backend == "pyannote":
+            from .diarization_v2 import load_diarization_pipeline, diarize_audio
+        else:
+            from .diarization_speakrs import load_diarization_pipeline, diarize_audio
+        num_speakers = args.speakers if args.speakers is not None else expected_speakers(context)
+        print("話者ヒント: 話者識別中...", flush=True)
+        pipeline = load_diarization_pipeline()
+        diar = diarize_audio(audio_path, pipeline, num_speakers=num_speakers)
+
+        from .voiceprint import cluster_similarity, identify, identify_segments
+        print("話者ヒント: 声紋クラスタ解析中...", flush=True)
+        resolve = cluster_similarity(audio_path, diar)
+        if voiceprint_profile:
+            try:
+                name_map = identify(voiceprint_profile, audio_path, diar, auto_update=False)
+                resolve["identified"] = {k: v for k, v in name_map.items() if v}
+            except Exception as e:
+                print(f"  声紋識別スキップ（{type(e).__name__}）", file=sys.stderr)
+            mixed_labels = [w["label"] for w in resolve.get("mixed_warnings", [])]
+            if mixed_labels:
+                try:
+                    resolve["segment_relabel"] = identify_segments(
+                        voiceprint_profile, audio_path, diar, labels=mixed_labels
+                    )
+                except Exception:
+                    pass
+
+        out = Path(args.output) if args.output else (rv.parent / f"{rv.stem}_speakers.json")
+        out.write_text(_json.dumps(resolve, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"話者ヒント保存: {out}", flush=True)
+        if resolve.get("merge_suggestions"):
+            print("  統合候補(同一の可能性): " + ", ".join("+".join(m["labels"]) for m in resolve["merge_suggestions"]), flush=True)
+        if resolve.get("mixed_warnings"):
+            print("  混在の可能性(過少分割): " + ", ".join(w["label"] for w in resolve["mixed_warnings"]), flush=True)
         return
 
     # Normal transcription mode requires video_path
@@ -308,7 +398,21 @@ def main():
     }[backend]
 
     # 案件コンテキスト（任意）: ASR固有名詞 + 文字起こし後の決定的正規化
-    context = load_context(args.context) if args.context else None
+    # --project <slug> 指定時は案件ストア(~/.claude/meeting-contexts/<slug>.yaml)を context として使い、
+    # 同一slugの声紋プロファイルも既定で有効にする（声紋と案件ストアを slug で連結）。
+    context_path = args.context
+    voiceprint_profile = args.voiceprints
+    if args.project:
+        from .context_store import store_path, load_project
+        proj = load_project(args.project)
+        if proj is None:
+            print(f"    案件『{args.project}』はまだ未登録（初回として進めます）", flush=True)
+        else:
+            if not context_path:
+                context_path = str(store_path(args.project))
+            if not voiceprint_profile:
+                voiceprint_profile = proj.get("voiceprint_profile") or args.project
+    context = load_context(context_path) if context_path else None
     glossary = asr_glossary(context) if context else None
 
     print(f"動画: {video_path}", flush=True)
@@ -316,7 +420,8 @@ def main():
     print(f"モデル: {args.model} ({mode})", flush=True)
     print(f"話者識別: {diarization_mode}", flush=True)
     if context:
-        print(f"案件コンテキスト: {args.context}（固有名詞 {len(glossary)} 件）", flush=True)
+        src = f"案件:{args.project}" if args.project else context_path
+        print(f"案件コンテキスト: {src}（固有名詞 {len(glossary)} 件）", flush=True)
     print(flush=True)
 
     # Step 1: Transcribe
@@ -353,12 +458,12 @@ def main():
         print("    解析中...", flush=True)
         diarization_segments = diarize_audio(audio_path, pipeline, num_speakers=num_speakers)
 
-        # 声紋識別（任意）: --voiceprints 指定時、diarizationクラスタを声紋DBと照合して実名化
+        # 声紋識別（任意）: --voiceprints/--project 指定時、diarizationクラスタを声紋DBと照合して実名化
         name_map = None
-        if args.voiceprints:
+        if voiceprint_profile:
             try:
                 from .voiceprint import identify
-                name_map = identify(args.voiceprints, audio_path, diarization_segments, auto_update=True)
+                name_map = identify(voiceprint_profile, audio_path, diarization_segments, auto_update=True)
                 hit = {k: v for k, v in name_map.items() if v}
                 print(f"    声紋識別: {hit if hit else '一致なし（発話者Nのまま）'}", flush=True)
             except Exception as e:
@@ -367,6 +472,34 @@ def main():
         segments_with_speakers = assign_speakers_to_segments(whisper_result, diarization_segments, name_map=name_map)
         unique_speakers = sorted(set(seg["speaker"] for seg in segments_with_speakers if seg["speaker"] != "不明"))
         print(f"    完了 (話者: {', '.join(unique_speakers)})", flush=True)
+
+        # 話者同一性ヒント（柱2）: 1次結果は直さず、議事録(成果物)側で過分割/過少分割を正すための材料。
+        # 声紋クラスタ類似度＋混在検出を算出し、声紋が育っていれば混在ラベルを区間単位で実名照合する。
+        # 結果はログに出し、サイドカー <transcript>_speakers.json に保存して skill から参照させる。
+        if not args.no_speaker_hints:
+            try:
+                from .voiceprint import cluster_similarity, identify_segments
+                resolve = cluster_similarity(audio_path, diarization_segments)
+                if name_map:
+                    resolve["identified"] = {k: v for k, v in name_map.items() if v}
+                mixed_labels = [w["label"] for w in resolve.get("mixed_warnings", [])]
+                if voiceprint_profile and mixed_labels:
+                    resolve["segment_relabel"] = identify_segments(
+                        voiceprint_profile, audio_path, diarization_segments, labels=mixed_labels
+                    )
+                merges = resolve.get("merge_suggestions", [])
+                mixed = resolve.get("mixed_warnings", [])
+                if merges:
+                    summary = "; ".join(f"{'+'.join(m['labels'])}~{m['score']}" for m in merges)
+                    print(f"    話者統合候補（同一の可能性）: {summary}", flush=True)
+                if mixed:
+                    print(f"    混在の可能性（過少分割）: {', '.join(w['label'] for w in mixed)}", flush=True)
+                import json as _json
+                sidecar = output_path.with_name(output_path.stem + "_speakers.json")
+                sidecar.write_text(_json.dumps(resolve, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"    話者ヒント: {sidecar}", flush=True)
+            except Exception as e:
+                print(f"    話者ヒント算出スキップ（{type(e).__name__}: {str(e)[:80]}）", file=sys.stderr)
 
     # Step 3: Format and save
     print("3/3 テキスト生成中...", flush=True)

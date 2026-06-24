@@ -8,6 +8,19 @@
 # ★鉄則: 組織構造と話者↔会社は「フレーム由来の確定事実」を書く。
 #   音声/文字からの推測で埋めない。確証が無い欄は (要確認) と明記する。
 
+# 案件ストアとして使う場合の連結キー（~/.claude/meeting-contexts/<slug>.yaml）。
+# slug は声紋プロファイル(~/.claude/voiceprints/<slug>.json)と同名にして連結する。
+# 会議ディレクトリ単位の project.context.yaml として使うだけなら slug 等は省略可。
+slug: ""                            # 例: "myteam"（省略可）
+voiceprint_profile: ""              # 既定は slug と同じ（省略可）
+enroll_count: 0                     # 学習回数（upsert_project_context が自動更新。手書き不要）
+
+# 案件自動判定(identify_project)用シグナル。動画パス/フレームOCR/タイトルと照合する。
+signals:
+  dir_keywords: []                  # 動画パス・ディレクトリ名に現れる語 例: [myteam, weekly]
+  org_terms: []                     # フレーム・共有資料に出る組織名/ロゴ語 例: ["A社", "B社"]
+  title_terms: []                   # 会議タイトルに出る語
+
 meeting:
   title: ""                         # 例: "週次定例MTG"
   kind: ""                          # 例: "社内事前打合せ" / "クライアント定例" / "エンドユーザーレビュー"
@@ -48,6 +61,19 @@ attribution_rules:
   - "明示的に他社へ依頼している場合のみ依頼先をowner。"
   - "引用からownerが確定できなければ UNKNOWN（推測で会社名を埋めない）。"
   # ここに案件固有の役割→owner規則を追記（例: 設計書修正=A社 / エンドユーザー確認=B社）
+
+# 議題種別ごとの注意点（kind と対応）。議事録の焦点を切り替える。
+topic_kinds:
+  - kind: ""                        # 例: "クライアント定例"
+    notes: ""                       # 例: "決定と自社TODOだけ。仕様の細かい説明は些末"
+
+# 議事録の取捨の好み（『何を残し何を書かないか』。ユーザーの議事録修正から自動で育つ）。
+# upsert_project_context が修正ベース学習で追記する。手書きで初期ルールを入れてもよい。
+minutes_preferences:
+  - rule: ""                        # 例: "仕様の細かい説明は残さない"
+    polarity: ""                    # keep（残す） / drop（書かない）
+    source: ""                      # explicit（明示指示） / edit-diff（修正差分から推定）
+    # added: "YYYY-MM-DD"           # 自動付与
 
 normalization:
   # 曖昧さの無い表記ゆれのみ機械置換する。意味反転しうる略号は入れない。

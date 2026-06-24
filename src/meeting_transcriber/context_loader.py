@@ -9,7 +9,7 @@
 設計思想:
 - 「誰がどの会社か」「決定/宿題/課題の帰属」は音声/文字だけでは復元できない。
   動画フレーム(参加者パネル+共有資料)で確定した事実を YAML に固定し、
-  ASRと議事録生成の双方へ注入することで帰属ズレを根本から断つ。
+  ASRと議事録生成の双方へ注入することで帰属ズレを根底から断つ。
 - 略語の意味反転に注意。例: ある略号が文脈によって別の会社を指すことがある。
   そうした曖昧な略号は決定的置換に含めず、context_notes で Claude に判定させる。
 """
@@ -162,14 +162,37 @@ def minutes_context_markdown(context: dict | None) -> str:
 
     roster = context.get("speaker_roster", []) or []
     if roster:
-        lines.append("## 話者ロスター（話者ラベル↔氏名↔会社）")
+        lines.append("## 話者ロスター（氏名↔会社。話者ラベルは声紋/フレームで都度解決）")
         for sp in roster:
-            label = sp.get("label", "?")
             name = sp.get("name", "")
             company = sp.get("company", "")
             role = sp.get("role", "")
+            label = sp.get("label")  # ストア由来は label を持たない（案件横断で固定できないため）
+            head = f"{label} = {name}" if label else name
             extra = f" / {role}" if role else ""
-            lines.append(f"- {label} = {name}（{company}）{extra}")
+            lines.append(f"- {head}（{company}）{extra}")
+        lines.append("")
+
+    kinds = context.get("topic_kinds", []) or []
+    if kinds:
+        lines.append("## 議題種別ごとの注意点")
+        for k in kinds:
+            kind = k.get("kind", "?")
+            notes = k.get("notes", "")
+            lines.append(f"- **{kind}**: {notes}")
+        lines.append("")
+
+    prefs = context.get("minutes_preferences", []) or []
+    if prefs:
+        lines.append("## 議事録の取捨（この案件で学習済み。何を残し何を書かないか）")
+        for p in prefs:
+            rule = p.get("rule", "")
+            if not rule:
+                continue
+            polarity = p.get("polarity", "")
+            mark = {"keep": "残す", "drop": "書かない"}.get(polarity, "")
+            tag = f"［{mark}］" if mark else ""
+            lines.append(f"- {tag}{rule}")
         lines.append("")
 
     rules = context.get("attribution_rules", []) or []
@@ -186,4 +209,47 @@ def minutes_context_markdown(context: dict | None) -> str:
             lines.append(f"- {n}")
         lines.append("")
 
+    return "\n".join(lines).strip()
+
+
+def speaker_identity_markdown(resolve: dict | None) -> str:
+    """話者同一性の解決ヒント（声紋由来・実行時データ）を議事録プロンプト用 markdown に。
+
+    resolve は voiceprint.cluster_similarity() の戻り（＋任意で 'identified': {発話者N:実名}）。
+    1次の文字起こしは直さず、この材料で議事録(成果物)側の話者帰属を正すための指示を出す。
+    """
+    if not resolve:
+        return ""
+    lines: list[str] = ["## 話者の同一性（声紋ヒント。1次結果は直さず議事録側で解決する）"]
+
+    identified = resolve.get("identified") or {}
+    if identified:
+        pairs = ", ".join(f"{k}→{v}" for k, v in identified.items() if v)
+        if pairs:
+            lines.append(f"- 声紋で実名化できた話者: {pairs}")
+
+    merges = resolve.get("merge_suggestions") or []
+    if merges:
+        lines.append("- **同一人物の可能性が高い（統合候補）**: 議事録では同じ人物として一貫表記する。")
+        for m in merges:
+            labels = " と ".join(m.get("labels", []))
+            lines.append(f"  - {labels}（声紋類似度 {m.get('score')}・確度 {m.get('confidence')}）")
+
+    mixed = resolve.get("mixed_warnings") or []
+    if mixed:
+        lines.append("- **別人が混在している可能性（過少分割）**: 下記ラベルは1人に見えて複数人かもしれない。"
+                     "発言ごとに文脈・フレーム・声紋で振り分け、混在のまま1人にしない。")
+        for w in mixed:
+            lines.append(f"  - {w.get('label')}（クラスタ結束 {w.get('min_cohesion')}・区間 {w.get('segments')}）")
+
+    seg = resolve.get("segment_relabel") or []
+    if seg:
+        lines.append("- **区間単位の声紋照合（登録済み声紋による振り直し提案）**: "
+                     "混在ラベル内の各区間を実名へ。時刻で文字起こしと突き合わせて反映する。")
+        for s in seg:
+            lines.append(f"  - {s.get('label')} {s.get('start')}〜{s.get('end')}s → {s.get('name')}"
+                         f"（類似度 {s.get('score')}）")
+
+    if len(lines) == 1:
+        return ""  # 見出しだけなら出さない
     return "\n".join(lines).strip()
