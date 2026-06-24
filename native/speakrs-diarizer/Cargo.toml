@@ -1,0 +1,12 @@
+[package]
+name = "speakrs-diarizer"
+version = "0.1.0"
+edition = "2024"
+description = "Thin CLI wrapper around speakrs for meeting-transcriber (RTTM on stdout)"
+
+[dependencies]
+speakrs = { version = "0.4", default-features = false, features = ["online", "openblas-system", "coreml"] }
+hound = "3"
+
+[profile.release]
+opt-level = 3

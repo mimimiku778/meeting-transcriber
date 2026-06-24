@@ -40,3 +40,7 @@ Thumbs.db
 *.pt
 *.bin
 pretrained_models/
+
+# Rust build artifacts (native/speakrs-diarizer)
+native/**/target/
+native/**/Cargo.lock
