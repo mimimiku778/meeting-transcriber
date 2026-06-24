@@ -281,7 +281,7 @@ def main():
         except Exception as e:
             parser.error(f"--enroll のJSONを解釈できません: {e}")
 
-        from .transcriber import extract_audio
+        from .transcriber import ensure_audio
         # diarization は transcribe と同じバックエンド（既定 speakrs）に揃える。
         # pyannote(CPU)で再diarizationすると遅い上、transcribeと話者ラベルの採番がズレて
         # 声紋が誤対応する。speakrs に揃えることで高速化＋ラベル整合を両立する。
@@ -291,11 +291,8 @@ def main():
         else:
             from .diarization_speakrs import load_diarization_pipeline, diarize_audio
         from .voiceprint import enroll, db_path
-        import tempfile
-        audio_path = str(Path(tempfile.gettempdir()) / "meeting_transcriber" / f"{enroll_video.stem}.wav")
-        Path(audio_path).parent.mkdir(exist_ok=True)
-        print("声紋登録: 音声抽出中...", flush=True)
-        extract_audio(str(enroll_video), audio_path)
+        print("声紋登録: 音声準備中（キャッシュ再利用）...", flush=True)
+        audio_path = ensure_audio(str(enroll_video))
         print("声紋登録: 話者識別中...", flush=True)
         context = load_context(args.context) if args.context else None
         num_speakers = args.speakers if args.speakers is not None else expected_speakers(context)
@@ -327,13 +324,10 @@ def main():
                     voiceprint_profile = proj.get("voiceprint_profile") or args.project
                 context = load_context(str(store_path(args.project)))
 
-        from .transcriber import extract_audio
-        import tempfile
+        from .transcriber import ensure_audio
         import json as _json
-        audio_path = str(Path(tempfile.gettempdir()) / "meeting_transcriber" / f"{rv.stem}.wav")
-        Path(audio_path).parent.mkdir(exist_ok=True)
-        print("話者ヒント: 音声抽出中...", flush=True)
-        extract_audio(str(rv), audio_path)
+        print("話者ヒント: 音声準備中（キャッシュ再利用）...", flush=True)
+        audio_path = ensure_audio(str(rv))
 
         backend = resolve_diarizer_backend(args)
         if backend == "pyannote":

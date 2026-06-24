@@ -49,6 +49,7 @@ install.sh       # セットアップスクリプト
   話者同一性ヒントを `<transcript>_speakers.json` に出力）
 - `enroll_voiceprints` - 発話者N→実名マッピングから声紋を登録/更新（議事録の後に回す）
 - `extract_video_frame` - 指定秒のフレームを抽出＋OCR
+- `extract_video_frames` - 複数時刻を動画1回オープンで一括抽出＋OCR並列（複数枚はこちらが高速）
 - `update_speaker_names` - 発話者名を置換
 - `read_transcript` - 文字起こし結果を読み込み
 - `finalize_meeting_files` - タイトル付きディレクトリへ整理

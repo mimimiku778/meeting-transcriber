@@ -58,6 +58,27 @@ def extract_audio(video_path: str, output_path: str) -> None:
     subprocess.run(cmd, check=True, capture_output=True)
 
 
+def ensure_audio(video_path: str, audio_path: str | None = None) -> str:
+    """16kHz mono wav を用意して返す。既存wavが動画より新しければ再抽出しない（高速化）。
+
+    transcribe→enroll→resolve_speakers と同じ動画を複数回処理する際、ffmpeg抽出の重複を
+    避けるためのキャッシュ。パスは動画stem基準で決定的なので各処理から共有される。
+    """
+    video = Path(video_path)
+    if audio_path is None:
+        audio_dir = Path(tempfile.gettempdir()) / "meeting_transcriber"
+        audio_dir.mkdir(exist_ok=True)
+        audio_path = audio_dir / f"{video.stem}.wav"
+    audio = Path(audio_path)
+    try:
+        if audio.exists() and audio.stat().st_size > 0 and audio.stat().st_mtime >= video.stat().st_mtime:
+            return str(audio)
+    except OSError:
+        pass
+    extract_audio(str(video), str(audio))
+    return str(audio)
+
+
 def transcribe_audio(
     audio_path: str,
     model_name: str = DEFAULT_MODEL,
@@ -118,11 +139,7 @@ def transcribe_video(
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
-    audio_dir = Path(tempfile.gettempdir()) / "meeting_transcriber"
-    audio_dir.mkdir(exist_ok=True)
-    audio_path = audio_dir / f"{video_path.stem}.wav"
-
-    extract_audio(str(video_path), str(audio_path))
-    result = transcribe_audio(str(audio_path), model_name, max_accuracy, glossary)
+    audio_path = ensure_audio(str(video_path))
+    result = transcribe_audio(audio_path, model_name, max_accuracy, glossary)
 
     return result, str(audio_path)

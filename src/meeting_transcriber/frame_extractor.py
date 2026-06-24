@@ -1,5 +1,6 @@
 """Video frame extraction module."""
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -123,6 +124,82 @@ def extract_frame(
 
     finally:
         cap.release()
+
+
+def extract_frames(
+    video_path: str,
+    timestamps: list[float],
+    output_dir: str | None = None,
+    max_ocr_workers: int = 6,
+) -> list[dict]:
+    """複数タイムスタンプのフレームを動画1回オープンで抽出し、OCRを並列実行する。
+
+    1枚ずつ extract_frame を呼ぶと毎回 VideoCapture を開き直し＋OCRを逐次実行するため、
+    枚数に比例して遅い。ここでは動画を1回だけ開いて全フレームを連続デコードし、重い
+    Vision OCR をスレッドプールで並列化する（OCRはGILを解放するブロッキング呼び出しなので
+    並列が効く）。フレーム抽出が「文字起こし後」工程の主要コストなので効果が大きい。
+
+    戻り値: [{timestamp, image_path, ocr_path, ocr_texts}], timestamp昇順。
+    """
+    video = Path(video_path)
+    if not video.exists():
+        raise FileNotFoundError(f"Video file not found: {video}")
+
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        raise ValueError(f"Could not open video file: {video}")
+
+    if output_dir is not None:
+        frames_dir = Path(output_dir) / "frames"
+        frames_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        frames_dir = Path("/tmp")
+
+    saved: list[dict] = []
+    try:
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps if fps > 0 else 0
+
+        # 前方シークは速いので昇順に処理する
+        for ts in sorted(set(float(t) for t in timestamps)):
+            if ts < 0 or (duration and ts > duration):
+                continue
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * fps))
+            ret, frame = cap.read()
+            if not ret:
+                continue
+            ts_str = f"{int(ts):05d}"
+            if output_dir is not None:
+                img_path = frames_dir / f"frame_{ts_str}s.jpg"
+                ocr_path = frames_dir / f"frame_{ts_str}s_ocr.txt"
+            else:
+                img_path = frames_dir / f"{video.stem}_frame_{ts_str}s.jpg"
+                ocr_path = None
+            cv2.imwrite(str(img_path), frame, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            saved.append({"timestamp": ts, "image_path": str(img_path), "ocr_path": ocr_path})
+    finally:
+        cap.release()
+
+    # OCR を並列実行（Vision はGILを解放するので ThreadPool が効く）
+    def _ocr(entry: dict) -> dict:
+        texts = ocr_image(entry["image_path"])
+        if entry["ocr_path"] is not None and texts:
+            Path(entry["ocr_path"]).write_text("\n".join(texts), encoding="utf-8")
+        return {
+            "timestamp": entry["timestamp"],
+            "image_path": entry["image_path"],
+            "ocr_path": str(entry["ocr_path"]) if entry["ocr_path"] else None,
+            "ocr_texts": texts,
+        }
+
+    if not saved:
+        return []
+    workers = max(1, min(max_ocr_workers, len(saved)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        results = list(pool.map(_ocr, saved))
+    results.sort(key=lambda r: r["timestamp"])
+    return results
 
 
 def get_video_duration(video_path: str) -> float:

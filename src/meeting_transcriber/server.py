@@ -9,7 +9,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-from .frame_extractor import extract_frame, get_video_duration
+from .frame_extractor import extract_frame, extract_frames, get_video_duration
 
 LOG_FILE = Path("/tmp/meeting-transcriber.log")
 
@@ -60,6 +60,19 @@ async def list_tools() -> list[Tool]:
                     "output_dir": {"type": "string", "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）"}
                 },
                 "required": ["video_path", "timestamp_seconds"]
+            }
+        ),
+        Tool(
+            name="extract_video_frames",
+            description="複数タイムスタンプのフレームを動画1回オープンでまとめて抽出し、OCRを並列実行します（1枚ずつ extract_video_frame を呼ぶより高速）。参加者パネル・画面共有・話題転換など複数コマを取るときは必ずこれを使う。抽出後は各 image_path を Read で視覚確認すること。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "動画ファイルのパス"},
+                    "timestamps_seconds": {"type": "array", "items": {"type": "number"}, "description": "抽出する時刻（秒）の配列"},
+                    "output_dir": {"type": "string", "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）"}
+                },
+                "required": ["video_path", "timestamps_seconds"]
             }
         ),
         Tool(
@@ -152,6 +165,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return await handle_transcribe_meeting(arguments)
         elif name == "extract_video_frame":
             return handle_extract_video_frame(arguments)
+        elif name == "extract_video_frames":
+            return handle_extract_video_frames(arguments)
         elif name == "update_speaker_names":
             return handle_update_speaker_names(arguments)
         elif name == "read_transcript":
@@ -240,6 +255,25 @@ def handle_extract_video_frame(arguments: dict) -> list[TextContent]:
         saved_info += f"\nOCRテキスト: {ocr_path}"
 
     return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n{saved_info}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。")]
+
+
+def handle_extract_video_frames(arguments: dict) -> list[TextContent]:
+    video_path = arguments["video_path"]
+    timestamps = arguments["timestamps_seconds"]
+    output_dir = arguments.get("output_dir")
+    results = extract_frames(video_path, timestamps, output_dir)
+
+    if not results:
+        return [TextContent(type="text", text="抽出できたフレームがありません（時刻が動画長の範囲外か、デコード失敗）")]
+
+    lines = [f"フレーム {len(results)} 枚を一括抽出＋並列OCR完了。各 image_path を Read で視覚確認してください。\n"]
+    for r in results:
+        lines.append(f"### {int(r['timestamp'])}秒")
+        lines.append(f"画像パス: {r['image_path']}")
+        if r.get("ocr_texts"):
+            lines.append("画面内テキスト(OCR): " + " / ".join(r["ocr_texts"][:30]))
+        lines.append("")
+    return [TextContent(type="text", text="\n".join(lines))]
 
 
 def handle_update_speaker_names(arguments: dict) -> list[TextContent]:
