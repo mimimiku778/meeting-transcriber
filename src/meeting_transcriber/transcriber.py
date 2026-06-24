@@ -36,7 +36,9 @@ def _build_prompt(glossary: list[str] | None, limit: int = 224) -> str:
         return _BASE_PROMPT
     try:
         from mlx_whisper.tokenizer import get_tokenizer
+
         tok = get_tokenizer(multilingual=True, language="ja", task="transcribe")
+
         def fits(text: str) -> bool:
             return len(tok.encode(" " + text.strip())) <= limit
     except Exception:
@@ -115,11 +117,11 @@ def transcribe_audio(
         initial_prompt=_build_prompt(glossary),
         # 閾値違反時のみ昇温して再デコード（標準のフォールバック挙動）
         temperature=(0.0, 0.2, 0.4, 0.6, 0.8, 1.0),
-        condition_on_previous_text=False,    # 最重要: 繰り返しハルシネーションの伝播を断つ
-        compression_ratio_threshold=1.8,     # 2.4 -> 1.8（より厳格に棄却）
-        logprob_threshold=-0.5,              # -1.0 -> -0.5（低確信度を棄却）
-        no_speech_threshold=0.3,             # 0.6 -> 0.3（無音区間を積極スキップ）
-        hallucination_silence_threshold=2.0, # 0.5 -> 2.0（無音区間の幻聴除去）
+        condition_on_previous_text=False,  # 最重要: 繰り返しハルシネーションの伝播を断つ
+        compression_ratio_threshold=1.8,  # 2.4 -> 1.8（より厳格に棄却）
+        logprob_threshold=-0.5,  # -1.0 -> -0.5（低確信度を棄却）
+        no_speech_threshold=0.3,  # 0.6 -> 0.3（無音区間を積極スキップ）
+        hallucination_silence_threshold=2.0,  # 0.5 -> 2.0（無音区間の幻聴除去）
     )
 
 

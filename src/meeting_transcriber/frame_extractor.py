@@ -4,8 +4,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
-import Vision
 import Quartz
+import Vision
 
 
 def ocr_image(image_path: str) -> list[str]:
@@ -19,9 +19,7 @@ def ocr_image(image_path: str) -> list[str]:
         List of recognized text strings
     """
     # Load image
-    image_url = Quartz.CFURLCreateWithFileSystemPath(
-        None, image_path, Quartz.kCFURLPOSIXPathStyle, False
-    )
+    image_url = Quartz.CFURLCreateWithFileSystemPath(None, image_path, Quartz.kCFURLPOSIXPathStyle, False)
     image_source = Quartz.CGImageSourceCreateWithURL(image_url, None)
     if not image_source:
         return []

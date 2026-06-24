@@ -6,7 +6,6 @@ speaker-diarization-community-1 を優先（取り違えが3.1比で大幅減・
 """
 
 import os
-from pathlib import Path
 
 import torch
 import torchaudio
@@ -118,7 +117,7 @@ def assign_speakers_to_segments(
     unique_speakers = sorted(set(seg["speaker"] for seg in diarization_segments))
     speaker_map = {}
     for i, spk in enumerate(unique_speakers):
-        label = f"発話者{i+1}"
+        label = f"発話者{i + 1}"
         speaker_map[spk] = (name_map.get(label) or label) if name_map else label
 
     for segment in whisper_result.get("segments", []):
@@ -151,12 +150,14 @@ def assign_speakers_to_segments(
 
         speaker_label = speaker_map.get(best_speaker, "不明") if best_speaker else "不明"
 
-        result_segments.append({
-            "start": seg_start,
-            "end": seg_end,
-            "text": segment["text"].strip(),
-            "speaker": speaker_label,
-            "original_speaker_id": best_speaker,
-        })
+        result_segments.append(
+            {
+                "start": seg_start,
+                "end": seg_end,
+                "text": segment["text"].strip(),
+                "speaker": speaker_label,
+                "original_speaker_id": best_speaker,
+            }
+        )
 
     return result_segments

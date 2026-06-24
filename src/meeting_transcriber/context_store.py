@@ -33,6 +33,7 @@ except Exception:  # pragma: no cover
 
 # ---- 場所・slug -----------------------------------------------------------
 
+
 def contexts_dir() -> Path:
     """案件ストアの保存ディレクトリ（~/.claude/meeting-contexts/）。"""
     base = Path(os.environ.get("MEETING_CONTEXTS_DIR", Path.home() / ".claude" / "meeting-contexts"))
@@ -59,6 +60,7 @@ def _today() -> str:
 
 
 # ---- I/O ------------------------------------------------------------------
+
 
 def _require_yaml() -> None:
     if yaml is None:
@@ -101,19 +103,22 @@ def list_projects() -> list[dict]:
         except Exception:
             continue
         meeting = data.get("meeting", {}) or {}
-        out.append({
-            "slug": data.get("slug", path.stem),
-            "title": meeting.get("title", ""),
-            "people": [p.get("name") for p in (data.get("speaker_roster", []) or []) if p.get("name")],
-            "orgs": [o.get("id") for o in (data.get("organization", []) or []) if o.get("id")],
-            "kinds": [k.get("kind") for k in (data.get("topic_kinds", []) or []) if k.get("kind")],
-            "enroll_count": data.get("enroll_count", 0),
-            "updated": data.get("updated", ""),
-        })
+        out.append(
+            {
+                "slug": data.get("slug", path.stem),
+                "title": meeting.get("title", ""),
+                "people": [p.get("name") for p in (data.get("speaker_roster", []) or []) if p.get("name")],
+                "orgs": [o.get("id") for o in (data.get("organization", []) or []) if o.get("id")],
+                "kinds": [k.get("kind") for k in (data.get("topic_kinds", []) or []) if k.get("kind")],
+                "enroll_count": data.get("enroll_count", 0),
+                "updated": data.get("updated", ""),
+            }
+        )
     return out
 
 
 # ---- 案件自動判定（identify相当）-----------------------------------------
+
 
 def _signals(data: dict) -> dict:
     sig = data.get("signals", {}) or {}
@@ -142,7 +147,7 @@ def identify_project(
     判定UXは呼び出し側（cli/skill）に委ねる: 最善候補で止めず進み、外れたら修正ベースで学習。
     """
     path_text = (str(video_path) or "").lower() if video_path else ""
-    hay_terms = " ".join((ocr_terms or [])).lower()
+    hay_terms = " ".join(ocr_terms or []).lower()
     hay_extra = (extra_text or "").lower()
     haystack = f"{hay_terms}\n{hay_extra}"
     vmatch = voiceprint_matches or {}
@@ -178,23 +183,26 @@ def identify_project(
 
         if score > 0:
             meeting = data.get("meeting", {}) or {}
-            results.append({
-                "slug": slug,
-                "score": round(score, 2),
-                "reasons": reasons,
-                "summary": {
-                    "title": meeting.get("title", ""),
-                    "orgs": [o.get("id") for o in (data.get("organization", []) or []) if o.get("id")],
-                    "people": [p.get("name") for p in (data.get("speaker_roster", []) or []) if p.get("name")],
-                    "enroll_count": data.get("enroll_count", 0),
-                },
-            })
+            results.append(
+                {
+                    "slug": slug,
+                    "score": round(score, 2),
+                    "reasons": reasons,
+                    "summary": {
+                        "title": meeting.get("title", ""),
+                        "orgs": [o.get("id") for o in (data.get("organization", []) or []) if o.get("id")],
+                        "people": [p.get("name") for p in (data.get("speaker_roster", []) or []) if p.get("name")],
+                        "enroll_count": data.get("enroll_count", 0),
+                    },
+                }
+            )
 
     results.sort(key=lambda r: r["score"], reverse=True)
     return results
 
 
 # ---- 学習（enroll/merge 相当）--------------------------------------------
+
 
 def _upsert_list(existing: list, updates: list, key: str) -> list:
     """key で同一視するリストを upsert する。人間確定(updates)が既存フィールドを上書きする。"""
@@ -284,6 +292,7 @@ def merge_into_project(slug: str, updates: dict, *, create_if_missing: bool = Tr
 
 
 # ---- 会議ディレクトリへの焼き込み（既存 --context パイプライン互換）-------
+
 
 def export_to_meeting_dir(slug: str, meeting_dir: str | Path) -> Path:
     """案件ストアの内容を会議ディレクトリへ project.context.yaml として書き出す。

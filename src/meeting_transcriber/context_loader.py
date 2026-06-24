@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 try:
@@ -237,18 +236,23 @@ def speaker_identity_markdown(resolve: dict | None) -> str:
 
     mixed = resolve.get("mixed_warnings") or []
     if mixed:
-        lines.append("- **別人が混在している可能性（過少分割）**: 下記ラベルは1人に見えて複数人かもしれない。"
-                     "発言ごとに文脈・フレーム・声紋で振り分け、混在のまま1人にしない。")
+        lines.append(
+            "- **別人が混在している可能性（過少分割）**: 下記ラベルは1人に見えて複数人かもしれない。"
+            "発言ごとに文脈・フレーム・声紋で振り分け、混在のまま1人にしない。"
+        )
         for w in mixed:
             lines.append(f"  - {w.get('label')}（クラスタ結束 {w.get('min_cohesion')}・区間 {w.get('segments')}）")
 
     seg = resolve.get("segment_relabel") or []
     if seg:
-        lines.append("- **区間単位の声紋照合（登録済み声紋による振り直し提案）**: "
-                     "混在ラベル内の各区間を実名へ。時刻で文字起こしと突き合わせて反映する。")
+        lines.append(
+            "- **区間単位の声紋照合（登録済み声紋による振り直し提案）**: "
+            "混在ラベル内の各区間を実名へ。時刻で文字起こしと突き合わせて反映する。"
+        )
         for s in seg:
-            lines.append(f"  - {s.get('label')} {s.get('start')}〜{s.get('end')}s → {s.get('name')}"
-                         f"（類似度 {s.get('score')}）")
+            lines.append(
+                f"  - {s.get('label')} {s.get('start')}〜{s.get('end')}s → {s.get('name')}（類似度 {s.get('score')}）"
+            )
 
     if len(lines) == 1:
         return ""  # 見出しだけなら出さない

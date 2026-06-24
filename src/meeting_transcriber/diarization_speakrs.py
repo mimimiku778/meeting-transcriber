@@ -28,8 +28,7 @@ from .diarization_v2 import assign_speakers_to_segments  # noqa: F401
 
 # リポジトリ同梱バイナリの既定パス（src/meeting_transcriber/ から見て repo ルート）
 _DEFAULT_BIN = (
-    Path(__file__).resolve().parents[2]
-    / "native" / "speakrs-diarizer" / "target" / "release" / "speakrs-diarizer"
+    Path(__file__).resolve().parents[2] / "native" / "speakrs-diarizer" / "target" / "release" / "speakrs-diarizer"
 )
 
 

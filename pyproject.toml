@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meeting-transcriber"
-version = "0.1.0"
+version = "0.2.0"
 description = "会議動画から話者識別付き議事録を作成するMCPサーバー & CLIツール"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 requires-python = ">=3.10"
+authors = [{ name = "mimimiku778" }]
 keywords = ["mcp", "whisper", "transcription", "diarization", "meeting"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -34,6 +35,15 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+# torch/mlx/pyannote 非依存の純ロジックを検証する開発用ツール（CIでもこれだけ入れれば回る）
+dev = ["pytest>=8.0", "ruff>=0.6", "pre-commit>=3.5"]
+
+[project.urls]
+Homepage = "https://github.com/mimimiku778/meeting-transcriber"
+Repository = "https://github.com/mimimiku778/meeting-transcriber"
+Issues = "https://github.com/mimimiku778/meeting-transcriber/issues"
+
 [project.scripts]
 transcribe = "meeting_transcriber.cli:main"
 transcribe-watch = "meeting_transcriber.cli:watch_progress"
@@ -41,3 +51,23 @@ meeting-transcriber-server = "meeting_transcriber.server:run"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+# E501(行長)は日本語コメントが多く実害が薄いので無効。B008はデフォルト引数の評価で
+# 既存スタイルに合わせ許容。
+ignore = ["E501", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py は torch/mlx の重い警告を抑えるため import より前に warnings.filterwarnings を呼ぶ
+# 意図的パターン。E402(import位置)はそのための許容。
+"src/meeting_transcriber/cli.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

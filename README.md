@@ -122,6 +122,18 @@ speakrs を使うには `native/speakrs-diarizer` を `cargo build --release`（
 - **HF_TOKEN**: 声紋（`pyannote/embedding`）と pyannote 話者分離は gated モデル。初回のみ huggingface.co で利用規約に同意し `HF_TOKEN` を環境変数で渡す（MCP登録時 `-e HF_TOKEN=...`）。キャッシュ後はオフライン可。**speakrs 既定の話者分離には不要**。
 - **デバイス**: 声紋embedding は MPS 既定（`MEETING_VOICEPRINT_DEVICE=cpu/mps/auto`）。pyannote 話者分離は cpu 既定（`MEETING_DIARIZER_DEVICE=mps` で変更）。
 
+## 開発
+
+```bash
+make dev      # 開発依存をインストール (pip install -e ".[dev]")
+make test     # pytest（torch/mlx 不要の純ロジック）
+make lint     # ruff check
+make format   # ruff 自動修正＋整形
+```
+
+テスト・コードスタイル・**「公開リポジトリに実名を入れない」鉄則**は [CONTRIBUTING.md](CONTRIBUTING.md) を参照。
+変更履歴は [CHANGELOG.md](CHANGELOG.md)。
+
 ## アップデート / アンインストール
 
 ```bash
@@ -133,3 +145,7 @@ claude mcp remove meeting-transcriber -s user
 rm ~/.claude/commands/transcribe-meeting.md ~/.local/bin/transcribe
 rm -rf ~/.claude/voiceprints ~/.claude/meeting-contexts   # 学習データも消す場合
 ```
+
+## ライセンス
+
+[MIT](LICENSE)

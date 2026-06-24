@@ -31,16 +31,16 @@ _EMBEDDING_MODEL = "pyannote/embedding"
 _inference = None
 
 # 識別の既定パラメータ
-DEFAULT_THRESHOLD = 0.50   # コサイン類似度がこれ未満なら UNKNOWN（発話者Nのまま）
-DEFAULT_MARGIN = 0.10      # 1位と2位の差がこれ未満なら曖昧として UNKNOWN
+DEFAULT_THRESHOLD = 0.50  # コサイン類似度がこれ未満なら UNKNOWN（発話者Nのまま）
+DEFAULT_MARGIN = 0.10  # 1位と2位の差がこれ未満なら曖昧として UNKNOWN
 AUTO_UPDATE_MARGIN = 0.15  # 自動平均更新は「閾値＋このマージン」以上の高信頼時のみ
-MIN_SEGMENT_SEC = 0.6      # これより短い区間は声紋計算に使わない
+MIN_SEGMENT_SEC = 0.6  # これより短い区間は声紋計算に使わない
 
 # クラスタ同一性（過分割マージ）の判定パラメータ。
 # DB照合の DEFAULT_THRESHOLD より高めにする: 別人を誤統合すると議事録の話者帰属が壊れ、
 # その損害は「分かれたまま」より大きいので保守的に倒す（疑わしきは統合しない）。
-MERGE_THRESHOLD = 0.78     # 発話者ペアの声紋がこれ以上似ていれば「同一の可能性」候補
-MERGE_HIGH_CONF = 0.86     # これ以上は confidence=high（ほぼ同一）
+MERGE_THRESHOLD = 0.78  # 発話者ペアの声紋がこれ以上似ていれば「同一の可能性」候補
+MERGE_HIGH_CONF = 0.86  # これ以上は confidence=high（ほぼ同一）
 # 1ラベル内（過少分割で別人混在の疑い）の検出: クラスタ内区間の声紋が平均からこれ未満に
 # ばらつくと「混在の可能性」を警告する（自動分割はせず Claude/人間の判断材料に留める）。
 MIXED_COHESION = 0.55
@@ -83,6 +83,7 @@ def _embedding_device():
     MEETING_VOICEPRINT_DEVICE=cpu/mps/auto で上書き可。
     """
     import torch
+
     want = os.environ.get("MEETING_VOICEPRINT_DEVICE", "auto").lower()
     if want != "cpu" and torch.backends.mps.is_available():
         return torch.device("mps")
@@ -99,6 +100,7 @@ def _get_inference():
     global _inference
     if _inference is None:
         from pyannote.audio import Inference, Model
+
         token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN")
         device = _embedding_device()
         print(f"    声紋embedding デバイス: {device}", flush=True)
@@ -147,6 +149,7 @@ def _cluster_segments(diar_segments: list[dict]) -> dict[str, list[tuple[float, 
 def _embed_segments(audio_path: str, segments: list[tuple[float, float]]) -> np.ndarray | None:
     """区間群の声紋を長さ重み平均で1ベクトルにまとめる。"""
     from pyannote.core import Segment
+
     inference = _get_inference()
     vecs, weights = [], []
     # 長い区間を優先（話者の手掛かりが強い）。最大8区間まで使えば十分。
@@ -174,7 +177,7 @@ def _label_to_cluster(diar_segments: list[dict]) -> dict[str, str]:
     assign_speakers_to_segments と同じソート順（unique_speakers昇順）で採番する。
     """
     unique = sorted(set(d["speaker"] for d in diar_segments))
-    return {f"発話者{i+1}": spk for i, spk in enumerate(unique)}
+    return {f"発話者{i + 1}": spk for i, spk in enumerate(unique)}
 
 
 def enroll(profile: str, audio_path: str, mapping: dict[str, str], diar_segments: list[dict]) -> dict:
@@ -333,11 +336,13 @@ def cluster_similarity(audio_path: str, diar_segments: list[dict], detect_mixed:
             score = round(float(_cosine(units[a]["mean"], units[b]["mean"])), 3)
             pairs.append({"a": a, "b": b, "score": score})
             if score >= MERGE_THRESHOLD:
-                suggestions.append({
-                    "labels": [a, b],
-                    "score": score,
-                    "confidence": "high" if score >= MERGE_HIGH_CONF else "medium",
-                })
+                suggestions.append(
+                    {
+                        "labels": [a, b],
+                        "score": score,
+                        "confidence": "high" if score >= MERGE_HIGH_CONF else "medium",
+                    }
+                )
     pairs.sort(key=lambda p: p["score"], reverse=True)
     suggestions.sort(key=lambda s: s["score"], reverse=True)
 
@@ -382,9 +387,9 @@ def identify_segments(
     refs = {n: np.asarray(speakers[n]["embedding"]) for n in names}
 
     label2cluster = _label_to_cluster(diar_segments)
-    cluster2label = {c: l for l, c in label2cluster.items()}
+    cluster2label = {c: lbl for lbl, c in label2cluster.items()}
     target_clusters = (
-        {label2cluster[l] for l in labels if l in label2cluster} if labels else set(label2cluster.values())
+        {label2cluster[lbl] for lbl in labels if lbl in label2cluster} if labels else set(label2cluster.values())
     )
 
     out: list[dict] = []
@@ -400,13 +405,15 @@ def identify_segments(
         best_score, best_name = scored[0]
         second = scored[1][0] if len(scored) > 1 else 0.0
         if best_score >= threshold and (best_score - second) >= margin:
-            out.append({
-                "label": cluster2label.get(d["speaker"], d["speaker"]),
-                "start": round(float(d["start"]), 1),
-                "end": round(float(d["end"]), 1),
-                "name": best_name,
-                "score": round(float(best_score), 3),
-            })
+            out.append(
+                {
+                    "label": cluster2label.get(d["speaker"], d["speaker"]),
+                    "start": round(float(d["start"]), 1),
+                    "end": round(float(d["end"]), 1),
+                    "name": best_name,
+                    "score": round(float(best_score), 3),
+                }
+            )
     return out
 
 

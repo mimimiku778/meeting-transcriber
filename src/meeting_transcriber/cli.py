@@ -3,6 +3,7 @@
 
 # Suppress all warnings before any imports
 import warnings
+
 warnings.filterwarnings("ignore")
 
 import argparse
@@ -10,8 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .transcriber import transcribe_video, format_timestamp, DEFAULT_MODEL
-from .context_loader import load_context, asr_glossary, apply_normalization, expected_speakers
+from .context_loader import apply_normalization, asr_glossary, expected_speakers, load_context
+from .transcriber import DEFAULT_MODEL, format_timestamp, transcribe_video
 
 LOG_FILE = Path("/tmp/meeting-transcriber.log")
 
@@ -31,11 +32,7 @@ def should_skip_process(pid: int, current_pid: int) -> bool:
     if pid == current_pid:
         return True
     try:
-        result = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "args="],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["ps", "-p", str(pid), "-o", "args="], capture_output=True, text=True)
         if result.returncode == 0:
             cmdline = result.stdout.strip()
             # Skip watch processes
@@ -72,11 +69,7 @@ def kill_all_transcribe():
 
     all_killed = set()
     for pattern, killed_list in patterns:
-        result = subprocess.run(
-            ["pgrep", "-f", pattern],
-            capture_output=True,
-            text=True
-        )
+        result = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
 
         if result.returncode == 0:
             pids = result.stdout.strip().split("\n")
@@ -96,7 +89,7 @@ def kill_all_transcribe():
 
     # Write to log file so --watch can see it
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_messages = [f"\n{'='*50}", f"[{timestamp}] 強制終了が実行されました"]
+    log_messages = [f"\n{'=' * 50}", f"[{timestamp}] 強制終了が実行されました"]
     if killed_transcribe:
         log_messages.append(f"  文字起こしプロセス: {len(killed_transcribe)} 件終了")
     if killed_mcp:
@@ -133,104 +126,75 @@ def resolve_diarizer_backend(args) -> str:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="会議動画から話者識別付き文字起こしを生成"
-    )
+    parser = argparse.ArgumentParser(description="会議動画から話者識別付き文字起こしを生成")
+    parser.add_argument("video_path", nargs="?", help="動画ファイルのパス")
+    parser.add_argument("--watch", "-w", action="store_true", help="MCPサーバーの進行状況を監視")
+    parser.add_argument("--kill", "-k", action="store_true", help="全ての文字起こしプロセスを強制終了")
+    parser.add_argument("-o", "--output", help="出力ファイルのパス（省略時は動画と同じディレクトリに _transcript.txt）")
     parser.add_argument(
-        "video_path",
-        nargs="?",
-        help="動画ファイルのパス"
-    )
-    parser.add_argument(
-        "--watch", "-w",
-        action="store_true",
-        help="MCPサーバーの進行状況を監視"
-    )
-    parser.add_argument(
-        "--kill", "-k",
-        action="store_true",
-        help="全ての文字起こしプロセスを強制終了"
-    )
-    parser.add_argument(
-        "-o", "--output",
-        help="出力ファイルのパス（省略時は動画と同じディレクトリに _transcript.txt）"
-    )
-    parser.add_argument(
-        "-m", "--model",
+        "-m",
+        "--model",
         default=DEFAULT_MODEL,
         choices=["small-4bit", "small", "medium", "large-v3", "large-v3-turbo"],
-        help=f"Whisperモデルサイズ (default: {DEFAULT_MODEL})"
+        help=f"Whisperモデルサイズ (default: {DEFAULT_MODEL})",
     )
     parser.add_argument(
         "--context",
         help="案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し、"
-             "文字起こし後に決定的(辞書)正規化を適用する"
+        "文字起こし後に決定的(辞書)正規化を適用する",
     )
     parser.add_argument(
         "--normalize",
         metavar="TRANSCRIPT",
         help="既存の文字起こしファイルに --context の決定的正規化のみを適用して保存し終了"
-             "（再文字起こし不要の再処理用）"
+        "（再文字起こし不要の再処理用）",
     )
-    parser.add_argument(
-        "--fast",
-        action="store_true",
-        help="速度優先モード（精度設定を緩和）"
-    )
-    parser.add_argument(
-        "--no-diarization",
-        action="store_true",
-        help="話者識別をスキップ"
-    )
-    parser.add_argument(
-        "--speakers",
-        type=int,
-        default=None,
-        help="話者数を指定（精度向上）"
-    )
+    parser.add_argument("--fast", action="store_true", help="速度優先モード（精度設定を緩和）")
+    parser.add_argument("--no-diarization", action="store_true", help="話者識別をスキップ")
+    parser.add_argument("--speakers", type=int, default=None, help="話者数を指定（精度向上）")
     parser.add_argument(
         "--voiceprints",
         metavar="PROFILE",
         default=None,
         help="声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<PROFILE>.json と照合し"
-             "『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま"
+        "『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま",
     )
     parser.add_argument(
         "--project",
         metavar="SLUG",
         default=None,
         help="案件スラッグ。~/.claude/meeting-contexts/<SLUG>.yaml を --context として使い、"
-             "同名の声紋プロファイルも自動で照合する（声紋と案件ストアを同一slugで連結）"
+        "同名の声紋プロファイルも自動で照合する（声紋と案件ストアを同一slugで連結）",
     )
     parser.add_argument(
         "--no-speaker-hints",
         action="store_true",
-        help="話者同一性ヒント（声紋クラスタ類似度・統合候補・混在検出）の算出をスキップ"
+        help="話者同一性ヒント（声紋クラスタ類似度・統合候補・混在検出）の算出をスキップ",
     )
     parser.add_argument(
         "--resolve-speakers",
         action="store_true",
         help="文字起こしせず、話者同一性ヒント（声紋クラスタ類似度・統合候補・混在検出・区間照合）だけを"
-             "算出して <video>_speakers.json に保存して終了する"
+        "算出して <video>_speakers.json に保存して終了する",
     )
     parser.add_argument(
         "--enroll",
         metavar="JSON",
         default=None,
         help="声紋登録モード。{'発話者1':'山田',...} のマッピング(JSON文字列 or ファイルパス)を渡すと、"
-             "--voiceprints のプロファイルに各実名の声紋を登録/更新して終了する"
+        "--voiceprints のプロファイルに各実名の声紋を登録/更新して終了する",
     )
     parser.add_argument(
         "--diarizer",
         choices=["speakrs", "pyannote"],
         default=None,
         help="話者識別バックエンド: speakrs(既定/最速・Apple Silicon CoreML) / "
-             "pyannote(同モデル・CPUで低速)。未指定は speakrs"
+        "pyannote(同モデル・CPUで低速)。未指定は speakrs",
     )
     parser.add_argument(
         "--diarization-v2",
         action="store_true",
-        help="pyannote.audio バックエンドを使用（= --diarizer pyannote のエイリアス）"
+        help="pyannote.audio バックエンドを使用（= --diarizer pyannote のエイリアス）",
     )
 
     args = parser.parse_args()
@@ -273,6 +237,7 @@ def main():
             sys.exit(1)
         # マッピングは JSON文字列 or ファイルパス
         import json as _json
+
         raw = args.enroll
         if Path(raw).exists():
             raw = Path(raw).read_text(encoding="utf-8")
@@ -282,15 +247,17 @@ def main():
             parser.error(f"--enroll のJSONを解釈できません: {e}")
 
         from .transcriber import ensure_audio
+
         # diarization は transcribe と同じバックエンド（既定 speakrs）に揃える。
         # pyannote(CPU)で再diarizationすると遅い上、transcribeと話者ラベルの採番がズレて
         # 声紋が誤対応する。speakrs に揃えることで高速化＋ラベル整合を両立する。
         backend = resolve_diarizer_backend(args)
         if backend == "pyannote":
-            from .diarization_v2 import load_diarization_pipeline, diarize_audio
+            from .diarization_v2 import diarize_audio, load_diarization_pipeline
         else:
-            from .diarization_speakrs import load_diarization_pipeline, diarize_audio
-        from .voiceprint import enroll, db_path
+            from .diarization_speakrs import diarize_audio, load_diarization_pipeline
+        from .voiceprint import db_path, enroll
+
         print("声紋登録: 音声準備中（キャッシュ再利用）...", flush=True)
         audio_path = ensure_audio(str(enroll_video))
         print("声紋登録: 話者識別中...", flush=True)
@@ -317,29 +284,33 @@ def main():
         voiceprint_profile = args.voiceprints
         context = None
         if args.project:
-            from .context_store import store_path, load_project
+            from .context_store import load_project, store_path
+
             proj = load_project(args.project)
             if proj:
                 if not voiceprint_profile:
                     voiceprint_profile = proj.get("voiceprint_profile") or args.project
                 context = load_context(str(store_path(args.project)))
 
-        from .transcriber import ensure_audio
         import json as _json
+
+        from .transcriber import ensure_audio
+
         print("話者ヒント: 音声準備中（キャッシュ再利用）...", flush=True)
         audio_path = ensure_audio(str(rv))
 
         backend = resolve_diarizer_backend(args)
         if backend == "pyannote":
-            from .diarization_v2 import load_diarization_pipeline, diarize_audio
+            from .diarization_v2 import diarize_audio, load_diarization_pipeline
         else:
-            from .diarization_speakrs import load_diarization_pipeline, diarize_audio
+            from .diarization_speakrs import diarize_audio, load_diarization_pipeline
         num_speakers = args.speakers if args.speakers is not None else expected_speakers(context)
         print("話者ヒント: 話者識別中...", flush=True)
         pipeline = load_diarization_pipeline()
         diar = diarize_audio(audio_path, pipeline, num_speakers=num_speakers)
 
         from .voiceprint import cluster_similarity, identify, identify_segments
+
         print("話者ヒント: 声紋クラスタ解析中...", flush=True)
         resolve = cluster_similarity(audio_path, diar)
         if voiceprint_profile:
@@ -361,7 +332,10 @@ def main():
         out.write_text(_json.dumps(resolve, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"話者ヒント保存: {out}", flush=True)
         if resolve.get("merge_suggestions"):
-            print("  統合候補(同一の可能性): " + ", ".join("+".join(m["labels"]) for m in resolve["merge_suggestions"]), flush=True)
+            print(
+                "  統合候補(同一の可能性): " + ", ".join("+".join(m["labels"]) for m in resolve["merge_suggestions"]),
+                flush=True,
+            )
         if resolve.get("mixed_warnings"):
             print("  混在の可能性(過少分割): " + ", ".join(w["label"] for w in resolve["mixed_warnings"]), flush=True)
         return
@@ -397,7 +371,8 @@ def main():
     context_path = args.context
     voiceprint_profile = args.voiceprints
     if args.project:
-        from .context_store import store_path, load_project
+        from .context_store import load_project, store_path
+
         proj = load_project(args.project)
         if proj is None:
             print(f"    案件『{args.project}』はまだ未登録（初回として進めます）", flush=True)
@@ -425,9 +400,9 @@ def main():
 
     # Import diarization module（backend に応じて。いずれも同じ3関数を提供）
     if backend == "pyannote":
-        from .diarization_v2 import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
+        from .diarization_v2 import assign_speakers_to_segments, diarize_audio, load_diarization_pipeline
     else:
-        from .diarization_speakrs import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
+        from .diarization_speakrs import assign_speakers_to_segments, diarize_audio, load_diarization_pipeline
 
     # Step 2: Speaker diarization
     if args.no_diarization:
@@ -457,6 +432,7 @@ def main():
         if voiceprint_profile:
             try:
                 from .voiceprint import identify
+
                 name_map = identify(voiceprint_profile, audio_path, diarization_segments, auto_update=True)
                 hit = {k: v for k, v in name_map.items() if v}
                 print(f"    声紋識別: {hit if hit else '一致なし（発話者Nのまま）'}", flush=True)
@@ -473,6 +449,7 @@ def main():
         if not args.no_speaker_hints:
             try:
                 from .voiceprint import cluster_similarity, identify_segments
+
                 resolve = cluster_similarity(audio_path, diarization_segments)
                 if name_map:
                     resolve["identified"] = {k: v for k, v in name_map.items() if v}
@@ -489,6 +466,7 @@ def main():
                 if mixed:
                     print(f"    混在の可能性（過少分割）: {', '.join(w['label'] for w in mixed)}", flush=True)
                 import json as _json
+
                 sidecar = output_path.with_name(output_path.stem + "_speakers.json")
                 sidecar.write_text(_json.dumps(resolve, ensure_ascii=False, indent=2), encoding="utf-8")
                 print(f"    話者ヒント: {sidecar}", flush=True)
@@ -534,7 +512,7 @@ def main():
 
     output_path.write_text(output_text, encoding="utf-8")
 
-    print(f"    完了", flush=True)
+    print("    完了", flush=True)
     print(flush=True)
     print(f"出力ファイル: {output_path}", flush=True)
 

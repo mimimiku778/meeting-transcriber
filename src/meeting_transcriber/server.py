@@ -7,7 +7,7 @@ from pathlib import Path
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import TextContent, Tool
 
 from .frame_extractor import extract_frame, extract_frames, get_video_duration
 
@@ -26,15 +26,36 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス（絶対パス）"},
-                    "output_path": {"type": "string", "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）"},
-                    "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3/large-v3-turbo)", "default": "large-v3-turbo"},
-                    "diarizer": {"type": "string", "enum": ["speakrs", "pyannote"], "description": "話者識別バックエンド（既定: speakrs = Apple Silicon CoreMLで最速・pyannote同等精度）。pyannoteは同モデルだがCPUで低速", "default": "speakrs"},
-                    "context_path": {"type": "string", "description": "案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し文字起こし後に決定的正規化を適用"},
-                    "voiceprint_profile": {"type": "string", "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json と照合し『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま"},
-                    "project": {"type": "string", "description": "案件スラッグ。~/.claude/meeting-contexts/<slug>.yaml を案件コンテキストとして使い、同名の声紋プロファイルも自動照合する（声紋と案件ストアを同一slugで連結）。話者同一性ヒントを <transcript>_speakers.json に出力"}
+                    "output_path": {
+                        "type": "string",
+                        "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）",
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Whisperモデル (small-4bit/small/medium/large-v3/large-v3-turbo)",
+                        "default": "large-v3-turbo",
+                    },
+                    "diarizer": {
+                        "type": "string",
+                        "enum": ["speakrs", "pyannote"],
+                        "description": "話者識別バックエンド（既定: speakrs = Apple Silicon CoreMLで最速・pyannote同等精度）。pyannoteは同モデルだがCPUで低速",
+                        "default": "speakrs",
+                    },
+                    "context_path": {
+                        "type": "string",
+                        "description": "案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し文字起こし後に決定的正規化を適用",
+                    },
+                    "voiceprint_profile": {
+                        "type": "string",
+                        "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json と照合し『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま",
+                    },
+                    "project": {
+                        "type": "string",
+                        "description": "案件スラッグ。~/.claude/meeting-contexts/<slug>.yaml を案件コンテキストとして使い、同名の声紋プロファイルも自動照合する（声紋と案件ストアを同一slugで連結）。話者同一性ヒントを <transcript>_speakers.json に出力",
+                    },
                 },
-                "required": ["video_path"]
-            }
+                "required": ["video_path"],
+            },
         ),
         Tool(
             name="enroll_voiceprints",
@@ -43,11 +64,18 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "登録元の動画ファイルのパス（絶対パス）"},
-                    "voiceprint_profile": {"type": "string", "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json に保存される"},
-                    "speaker_mapping": {"type": "object", "description": "発話者ラベル→実名のマッピング 例 {\"発話者1\":\"山田\",\"発話者2\":\"鈴木\"}", "additionalProperties": {"type": "string"}}
+                    "voiceprint_profile": {
+                        "type": "string",
+                        "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json に保存される",
+                    },
+                    "speaker_mapping": {
+                        "type": "object",
+                        "description": '発話者ラベル→実名のマッピング 例 {"発話者1":"山田","発話者2":"鈴木"}',
+                        "additionalProperties": {"type": "string"},
+                    },
                 },
-                "required": ["video_path", "voiceprint_profile", "speaker_mapping"]
-            }
+                "required": ["video_path", "voiceprint_profile", "speaker_mapping"],
+            },
         ),
         Tool(
             name="extract_video_frame",
@@ -57,10 +85,13 @@ async def list_tools() -> list[Tool]:
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス"},
                     "timestamp_seconds": {"type": "number", "description": "抽出する時間（秒）"},
-                    "output_dir": {"type": "string", "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）"}
+                    "output_dir": {
+                        "type": "string",
+                        "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）",
+                    },
                 },
-                "required": ["video_path", "timestamp_seconds"]
-            }
+                "required": ["video_path", "timestamp_seconds"],
+            },
         ),
         Tool(
             name="extract_video_frames",
@@ -69,11 +100,18 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス"},
-                    "timestamps_seconds": {"type": "array", "items": {"type": "number"}, "description": "抽出する時刻（秒）の配列"},
-                    "output_dir": {"type": "string", "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）"}
+                    "timestamps_seconds": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "抽出する時刻（秒）の配列",
+                    },
+                    "output_dir": {
+                        "type": "string",
+                        "description": "整理されたディレクトリのパス（指定時はframes/サブディレクトリに保存）",
+                    },
                 },
-                "required": ["video_path", "timestamps_seconds"]
-            }
+                "required": ["video_path", "timestamps_seconds"],
+            },
         ),
         Tool(
             name="update_speaker_names",
@@ -82,21 +120,23 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "transcript_path": {"type": "string", "description": "文字起こしファイルのパス"},
-                    "speaker_mapping": {"type": "object", "description": "発話者IDから名前へのマッピング", "additionalProperties": {"type": "string"}}
+                    "speaker_mapping": {
+                        "type": "object",
+                        "description": "発話者IDから名前へのマッピング",
+                        "additionalProperties": {"type": "string"},
+                    },
                 },
-                "required": ["transcript_path", "speaker_mapping"]
-            }
+                "required": ["transcript_path", "speaker_mapping"],
+            },
         ),
         Tool(
             name="read_transcript",
             description="文字起こしファイルを読み込みます。",
             inputSchema={
                 "type": "object",
-                "properties": {
-                    "transcript_path": {"type": "string", "description": "文字起こしファイルのパス"}
-                },
-                "required": ["transcript_path"]
-            }
+                "properties": {"transcript_path": {"type": "string", "description": "文字起こしファイルのパス"}},
+                "required": ["transcript_path"],
+            },
         ),
         Tool(
             name="finalize_meeting_files",
@@ -105,11 +145,17 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "元の動画ファイルのパス"},
-                    "title": {"type": "string", "description": "会議のタイトル（ディレクトリ名とファイル名に使用、日本語可）"},
-                    "transcript_path": {"type": "string", "description": "既存の文字起こしファイルのパス（省略時は自動検出）"}
+                    "title": {
+                        "type": "string",
+                        "description": "会議のタイトル（ディレクトリ名とファイル名に使用、日本語可）",
+                    },
+                    "transcript_path": {
+                        "type": "string",
+                        "description": "既存の文字起こしファイルのパス（省略時は自動検出）",
+                    },
                 },
-                "required": ["video_path", "title"]
-            }
+                "required": ["video_path", "title"],
+            },
         ),
         Tool(
             name="identify_project",
@@ -117,12 +163,26 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "video_path": {"type": "string", "description": "動画ファイルのパス（ディレクトリ/ファイル名のキーワード照合に使う）"},
-                    "ocr_terms": {"type": "array", "items": {"type": "string"}, "description": "冒頭フレームのOCRや参加者パネルから拾った語（組織名・タイトル語）。signals と照合する"},
-                    "voiceprint_matches": {"type": "object", "description": "声紋で一致した案件ごとの人数 {slug: 一致人数}（任意・最強シグナル）", "additionalProperties": {"type": "integer"}},
-                    "extra_text": {"type": "string", "description": "追加の手掛かりテキスト（文字起こし冒頭など・任意）"}
-                }
-            }
+                    "video_path": {
+                        "type": "string",
+                        "description": "動画ファイルのパス（ディレクトリ/ファイル名のキーワード照合に使う）",
+                    },
+                    "ocr_terms": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "冒頭フレームのOCRや参加者パネルから拾った語（組織名・タイトル語）。signals と照合する",
+                    },
+                    "voiceprint_matches": {
+                        "type": "object",
+                        "description": "声紋で一致した案件ごとの人数 {slug: 一致人数}（任意・最強シグナル）",
+                        "additionalProperties": {"type": "integer"},
+                    },
+                    "extra_text": {
+                        "type": "string",
+                        "description": "追加の手掛かりテキスト（文字起こし冒頭など・任意）",
+                    },
+                },
+            },
         ),
         Tool(
             name="resolve_speakers",
@@ -131,11 +191,17 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "video_path": {"type": "string", "description": "動画ファイルのパス"},
-                    "project": {"type": "string", "description": "案件スラッグ（同名の声紋プロファイルを使い、混在ラベルを区間単位で実名照合する）"},
-                    "voiceprint_profile": {"type": "string", "description": "声紋プロファイル名（project 未指定時の直接指定）"}
+                    "project": {
+                        "type": "string",
+                        "description": "案件スラッグ（同名の声紋プロファイルを使い、混在ラベルを区間単位で実名照合する）",
+                    },
+                    "voiceprint_profile": {
+                        "type": "string",
+                        "description": "声紋プロファイル名（project 未指定時の直接指定）",
+                    },
                 },
-                "required": ["video_path"]
-            }
+                "required": ["video_path"],
+            },
         ),
         Tool(
             name="upsert_project_context",
@@ -143,18 +209,27 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "slug": {"type": "string", "description": "案件スラッグ（声紋プロファイルと同一。無ければ新規作成）"},
-                    "updates": {"type": "object", "description": "部分更新。キー例: organization/speaker_roster/glossary/topic_kinds/minutes_preferences/asr_prompt_terms/attribution_rules/signals/meeting/normalization"},
-                    "meeting_dir": {"type": "string", "description": "指定すると更新後ストアを project.context.yaml としてその会議ディレクトリへ焼き込む（任意）"}
+                    "slug": {
+                        "type": "string",
+                        "description": "案件スラッグ（声紋プロファイルと同一。無ければ新規作成）",
+                    },
+                    "updates": {
+                        "type": "object",
+                        "description": "部分更新。キー例: organization/speaker_roster/glossary/topic_kinds/minutes_preferences/asr_prompt_terms/attribution_rules/signals/meeting/normalization",
+                    },
+                    "meeting_dir": {
+                        "type": "string",
+                        "description": "指定すると更新後ストアを project.context.yaml としてその会議ディレクトリへ焼き込む（任意）",
+                    },
                 },
-                "required": ["slug", "updates"]
-            }
+                "required": ["slug", "updates"],
+            },
         ),
         Tool(
             name="list_projects",
             description="登録済みの案件ストア一覧（slug・タイトル・登場人物・組織・学習回数）を返します。",
-            inputSchema={"type": "object", "properties": {}}
-        )
+            inputSchema={"type": "object", "properties": {}},
+        ),
     ]
 
 
@@ -228,6 +303,7 @@ async def handle_enroll_voiceprints(arguments: dict) -> list[TextContent]:
     mapping = arguments["speaker_mapping"]
 
     import json as _json
+
     cmd = ["transcribe", video_path, "--voiceprints", profile, "--enroll", _json.dumps(mapping, ensure_ascii=False)]
 
     LOG_FILE.write_text("")
@@ -254,7 +330,12 @@ def handle_extract_video_frame(arguments: dict) -> list[TextContent]:
     if ocr_path:
         saved_info += f"\nOCRテキスト: {ocr_path}"
 
-    return [TextContent(type="text", text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n{saved_info}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。")]
+    return [
+        TextContent(
+            type="text",
+            text=f"フレーム抽出完了（{timestamp_seconds}秒、動画長: {duration:.1f}秒）\n\n{saved_info}{ocr_section}\n\nClaudeにこの画像を見せるには、Readツールでパスを読み込んでください。",
+        )
+    ]
 
 
 def handle_extract_video_frames(arguments: dict) -> list[TextContent]:
@@ -287,7 +368,7 @@ def handle_update_speaker_names(arguments: dict) -> list[TextContent]:
     content = path.read_text(encoding="utf-8")
     replacements = []
     for old_name, new_name in speaker_mapping.items():
-        pattern = re.compile(re.escape(old_name) + r'(?=\s*\()')
+        pattern = re.compile(re.escape(old_name) + r"(?=\s*\()")
         matches = pattern.findall(content)
         if matches:
             content = pattern.sub(new_name, content)
@@ -316,7 +397,7 @@ def handle_finalize_meeting_files(arguments: dict) -> list[TextContent]:
     video_dir = video_path.parent
 
     # タイトルからファイル名に使えない文字を除去
-    safe_title = re.sub(r'[<>:"/\\|?*]', '', title).strip()
+    safe_title = re.sub(r'[<>:"/\\|?*]', "", title).strip()
     if not safe_title:
         return [TextContent(type="text", text="タイトルが無効です")]
 
@@ -341,17 +422,23 @@ def handle_finalize_meeting_files(arguments: dict) -> list[TextContent]:
     else:
         moved_msg = f"文字起こしファイルが見つかりません: {transcript_path}"
 
-    return [TextContent(type="text", text=f"""整理完了
+    return [
+        TextContent(
+            type="text",
+            text=f"""整理完了
 
 ディレクトリ: {output_dir}
 {moved_msg}
 議事録ファイルパス: {new_minutes_path}
 
-議事録を作成する場合は、上記パスに保存してください。""")]
+議事録を作成する場合は、上記パスに保存してください。""",
+        )
+    ]
 
 
 def handle_identify_project(arguments: dict) -> list[TextContent]:
     from .context_store import identify_project
+
     candidates = identify_project(
         video_path=arguments.get("video_path"),
         ocr_terms=arguments.get("ocr_terms"),
@@ -361,11 +448,14 @@ def handle_identify_project(arguments: dict) -> list[TextContent]:
     if not candidates:
         return [TextContent(type="text", text="該当案件なし（新規案件として進めてください）。\n[]")]
     import json as _json
+
     lines = ["案件候補（確信度降順）:"]
     for c in candidates:
         s = c["summary"]
-        lines.append(f"- {c['slug']}（score {c['score']}）: {', '.join(c['reasons'])}"
-                     f" / 組織 {s.get('orgs')} / 人 {s.get('people')} / 学習{s.get('enroll_count')}回")
+        lines.append(
+            f"- {c['slug']}（score {c['score']}）: {', '.join(c['reasons'])}"
+            f" / 組織 {s.get('orgs')} / 人 {s.get('people')} / 学習{s.get('enroll_count')}回"
+        )
     lines.append("\n```json\n" + _json.dumps(candidates, ensure_ascii=False, indent=2) + "\n```")
     return [TextContent(type="text", text="\n".join(lines))]
 
@@ -392,7 +482,8 @@ async def handle_resolve_speakers(arguments: dict) -> list[TextContent]:
 
 
 def handle_upsert_project_context(arguments: dict) -> list[TextContent]:
-    from .context_store import merge_into_project, export_to_meeting_dir
+    from .context_store import export_to_meeting_dir, merge_into_project
+
     slug = arguments["slug"]
     updates = arguments.get("updates") or {}
     data = merge_into_project(slug, updates)
@@ -405,13 +496,16 @@ def handle_upsert_project_context(arguments: dict) -> list[TextContent]:
 
 def handle_list_projects(arguments: dict) -> list[TextContent]:
     from .context_store import list_projects
+
     projects = list_projects()
     if not projects:
         return [TextContent(type="text", text="登録済み案件なし")]
     lines = ["登録済み案件:"]
     for p in projects:
-        lines.append(f"- {p['slug']}: {p.get('title','')} / 組織 {p.get('orgs')} / 人 {p.get('people')}"
-                     f" / 議題 {p.get('kinds')} / 学習{p.get('enroll_count')}回 / 更新 {p.get('updated')}")
+        lines.append(
+            f"- {p['slug']}: {p.get('title', '')} / 組織 {p.get('orgs')} / 人 {p.get('people')}"
+            f" / 議題 {p.get('kinds')} / 学習{p.get('enroll_count')}回 / 更新 {p.get('updated')}"
+        )
     return [TextContent(type="text", text="\n".join(lines))]
 
 
