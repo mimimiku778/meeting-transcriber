@@ -99,17 +99,27 @@ def _speaker_at(t: float, diarization_segments: list[dict]) -> str | None:
     return best
 
 
-def assign_speakers_to_segments(whisper_result: dict, diarization_segments: list[dict]) -> list[dict]:
+def assign_speakers_to_segments(
+    whisper_result: dict,
+    diarization_segments: list[dict],
+    name_map: dict[str, str] | None = None,
+) -> list[dict]:
     """Whisperセグメントへ話者を割当てる。
 
     word単位の中点投票（多数決）で話者を決める。これにより1セグメントに
     質問→相槌→受け が混ざるケースの話者取り違えを軽減する。
     word情報が無い場合はセグメント中点で割当てる（従来方式へフォールバック）。
+
+    name_map（声紋識別の結果 {'発話者1':'山田',...}）が渡された話者は『発話者N』の
+    代わりに実名を表示する。未識別(None)や未指定はそのまま『発話者N』。
     """
     result_segments = []
 
     unique_speakers = sorted(set(seg["speaker"] for seg in diarization_segments))
-    speaker_map = {spk: f"発話者{i+1}" for i, spk in enumerate(unique_speakers)}
+    speaker_map = {}
+    for i, spk in enumerate(unique_speakers):
+        label = f"発話者{i+1}"
+        speaker_map[spk] = (name_map.get(label) or label) if name_map else label
 
     for segment in whisper_result.get("segments", []):
         seg_start = segment["start"]

@@ -95,6 +95,45 @@ transcribe --normalize dir/xxx_transcript.txt --context dir/project.context.yaml
 `HF_TOKEN` を環境変数で渡す（MCP登録時は `-e HF_TOKEN=...`）。既にキャッシュ済みならトークン無しで動作する。
 MPS は既定で無効（タイムスタンプ崩れの報告があるため）。使う場合は `MEETING_DIARIZER_DEVICE=mps`。
 
+## 声紋（話者エンロールメント）
+
+毎回同じ顔ぶれの定例なら、各人の**声紋（speaker embedding）を一度登録**しておくと、
+以降の会議で `発話者1` → `山田` のように**実名を自動付与**できる。フレームで青枠×発話タイミングを
+突き合わせる手作業が要らなくなる。
+
+### 紐づけ・保存・修正のしくみ
+
+- **紐づけ（名前は常に人間が確定した正解）**: 文字起こし→diarizationが `発話者1..N` を出す →
+  人間がフレームで `発話者1=山田` と確定 → その確定マッピングから各実名の声紋を生成して登録する。
+  名前は人間がつけた正解ラベルで、声紋はそれを後追いで学習する補助。同姓別人がいる場合は
+  `山田(A社)` のように一意なラベルで登録すれば、声紋がむしろ別人を声で区別する助けになる。
+- **保存場所**: `~/.claude/voiceprints/<プロファイル>.json`（**ローカルのみ**）。保存するのは
+  生音声ではなく特徴ベクトル（数百次元のfloat）。1話者あたり数KB。環境変数 `MEETING_VOICEPRINTS_DIR` で変更可。
+  プロファイル単位なので案件ごとに分離でき、汎用の文字起こしに特定人物の声紋が混ざらない。
+- **識別と自動更新**: 新会議のdiarization各クラスタを声紋DBと照合（コサイン類似度）。
+  閾値（既定0.50）＋2位とのマージン（既定0.10）を満たせば実名、満たさなければ `発話者N` のまま
+  （＝フレーム確認にフォールバック）。**高信頼（閾値＋0.15以上）で識別できた回は声紋を自動で平均更新**し、
+  使うほど精度が上がる。誤照合の学習を避けるため自動更新は高信頼時のみ。
+- **修正**: identifyが外れた/新メンバーが居たら、その回で人間が訂正 → 訂正後のマッピングで再enroll
+  すれば正しい音声で声紋を矯正できる。DBは可読JSONなので名前のrename・削除・手編集も可能
+  （`voiceprint.rename_speaker` / `remove_speaker`）。**人間の確定が常に最優先**。
+
+※ 声紋には pyannote の埋め込みモデル（`pyannote/embedding`、gated）を使う。話者識別と同様、
+  初回のみ `HF_TOKEN` でDLが必要、キャッシュ後はオフライン可。
+
+### CLI
+
+```bash
+# 1) 登録（人間が確定した発話者N→実名マッピングから声紋を作る）
+transcribe /path/to/meeting.mov --voiceprints myteam \
+  --enroll '{"発話者1":"山田","発話者2":"鈴木","発話者3":"佐藤","発話者4":"田中"}'
+
+# 2) 以降の会議は声紋で自動実名化
+transcribe /path/to/next_meeting.mov --voiceprints myteam
+```
+
+MCPツール: `enroll_voiceprints`（登録）／`transcribe_meeting` の `voiceprint_profile` 引数（識別）。
+
 ## インストール
 
 ```bash
@@ -131,6 +170,9 @@ rm ~/.claude/commands/transcribe-meeting.md
 # CLIコマンド削除
 rm ~/.local/bin/transcribe
 
+# 声紋DB削除（登録していた場合）
+rm -rf ~/.claude/voiceprints
+
 # リポジトリ削除（必要に応じて）
 rm -rf /path/to/meeting-transcriber
 ```
@@ -141,7 +183,8 @@ rm -rf /path/to/meeting-transcriber
 ~/.claude/commands/transcribe-meeting.md  # スキル定義
     ↓ 呼び出し
 MCPサーバー (meeting-transcriber)
-    ├── transcribe_meeting     # 文字起こし + 話者識別
+    ├── transcribe_meeting     # 文字起こし + 話者識別（+声紋で実名化 voiceprint_profile）
+    ├── enroll_voiceprints     # 声紋登録（発話者N→実名マッピングから）
     ├── extract_video_frame    # フレーム抽出 + OCR
     ├── update_speaker_names   # 発話者名置換
     ├── read_transcript        # 文字起こし読み込み
@@ -158,6 +201,7 @@ src/meeting_transcriber/
   context_loader.py  # project.context.yaml → 用語集/決定的正規化/組織コンテキスト展開
   diarization.py     # SpeechBrain話者識別（v1・フォールバック）
   diarization_v2.py  # pyannote.audio話者識別（v2・既定・word単位多数決）
+  voiceprint.py      # 声紋エンロールメント/識別（pyannote embedding、~/.claude/voiceprints/）
   frame_extractor.py # OpenCV + Vision OCR
 templates/
   project.context.template.yaml  # 案件コンテキストの雛形

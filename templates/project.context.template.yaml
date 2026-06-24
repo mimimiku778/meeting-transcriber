@@ -9,20 +9,21 @@
 #   音声/文字からの推測で埋めない。確証が無い欄は (要確認) と明記する。
 
 meeting:
-  title: ""                         # 例: "Ph5-1 定例事前インナーMTG"
+  title: ""                         # 例: "週次定例MTG"
   kind: ""                          # 例: "社内事前打合せ" / "クライアント定例" / "エンドユーザーレビュー"
   date: ""                          # YYYY-MM-DD
-  attendees_present: []             # 出席した会社ID 例: [DC, DD]
+  attendees_present: []             # 出席した会社ID 例: [A社, B社]
+  expected_speakers:                # 参加者の実人数（例: 4）。diarizationの過分割を抑制（--speakers 未指定時に使用）
 
 # 登場する会社（自社・クライアント・エンドユーザー…）。idは議事録ownerのenumに使う。
 organization:
-  - id: ""                          # 短い略号。例: DC
-    canonical: ""                   # 正式名。例: "DGCircus（dgcircus.com）"
+  - id: ""                          # 短い略号。例: A社
+    canonical: ""                   # 正式名。例: "A社（example.com）"
     side: ""                        # 自社 / クライアント / エンドユーザー / パートナー 等
     role: >-
       この会社が会議で担う役割と、宿題のownerになりやすい作業を具体的に。
       例: 設計書の作成・修正・編集を行う実作業側 / レビュー進行・エンドユーザー折衝 / 承認のみ
-    asr_aliases: []                 # 文字起こし上の呼ばれ方・誤認識ゆれ 例: ["DC","DCさん","GC"]
+    asr_aliases: []                 # 文字起こし上の呼ばれ方・誤認識ゆれ 例: ["A社","A社さん"]
 
 # 話者ラベル↔氏名↔会社。フレームのアクティブスピーカー(青枠)と画面共有主から確定する。
 speaker_roster:
@@ -46,7 +47,7 @@ attribution_rules:
   - "主語省略は原則その発話者の所属会社をowner。"
   - "明示的に他社へ依頼している場合のみ依頼先をowner。"
   - "引用からownerが確定できなければ UNKNOWN（推測で会社名を埋めない）。"
-  # ここに案件固有の役割→owner規則を追記（例: 設計書修正=DC / エンドユーザー確認=DD）
+  # ここに案件固有の役割→owner規則を追記（例: 設計書修正=A社 / エンドユーザー確認=B社）
 
 normalization:
   # 曖昧さの無い表記ゆれのみ機械置換する。意味反転しうる略号は入れない。

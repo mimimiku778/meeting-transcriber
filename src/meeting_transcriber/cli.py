@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 from .transcriber import transcribe_video, format_timestamp, DEFAULT_MODEL
-from .context_loader import load_context, asr_glossary, apply_normalization
+from .context_loader import load_context, asr_glossary, apply_normalization, expected_speakers
 
 LOG_FILE = Path("/tmp/meeting-transcriber.log")
 
@@ -119,6 +119,19 @@ def kill_all_transcribe():
         print("実行中のMCPサーバーはありません")
 
 
+def resolve_diarizer_backend(args) -> str:
+    """話者識別バックエンドを決定する。既定は speakrs（Apple Silicon CoreMLで最速）。
+
+    優先順: --diarizer 明示 > --diarization-v2(pyannote) > speakrs(既定)。
+    """
+    explicit = getattr(args, "diarizer", None)
+    if explicit:
+        return explicit
+    if getattr(args, "diarization_v2", False):
+        return "pyannote"
+    return "speakrs"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="会議動画から話者識別付き文字起こしを生成"
@@ -176,14 +189,30 @@ def main():
         help="話者数を指定（精度向上）"
     )
     parser.add_argument(
-        "--diarization-v2",
-        action="store_true",
-        help="（既定）pyannote.audio ベースの高精度話者識別。現在はこちらが標準"
+        "--voiceprints",
+        metavar="PROFILE",
+        default=None,
+        help="声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<PROFILE>.json と照合し"
+             "『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま"
     )
     parser.add_argument(
-        "--diarization-v1",
+        "--enroll",
+        metavar="JSON",
+        default=None,
+        help="声紋登録モード。{'発話者1':'山田',...} のマッピング(JSON文字列 or ファイルパス)を渡すと、"
+             "--voiceprints のプロファイルに各実名の声紋を登録/更新して終了する"
+    )
+    parser.add_argument(
+        "--diarizer",
+        choices=["speakrs", "pyannote"],
+        default=None,
+        help="話者識別バックエンド: speakrs(既定/最速・Apple Silicon CoreML) / "
+             "pyannote(同モデル・CPUで低速)。未指定は speakrs"
+    )
+    parser.add_argument(
+        "--diarization-v2",
         action="store_true",
-        help="従来の simple-diarizer を使用（注: huggingface_hub 1.x では非互換の場合あり）"
+        help="pyannote.audio バックエンドを使用（= --diarizer pyannote のエイリアス）"
     )
 
     args = parser.parse_args()
@@ -214,6 +243,45 @@ def main():
         print("\n".join(report) if report else "置換対象なし")
         return
 
+    # Enroll-only mode: 動画＋『発話者N→実名』マッピングから声紋を登録して終了
+    if args.enroll:
+        if not args.voiceprints:
+            parser.error("--enroll には --voiceprints（プロファイル名）が必要です")
+        if not args.video_path:
+            parser.error("--enroll には動画ファイルのパスが必要です")
+        enroll_video = Path(args.video_path).resolve()
+        if not enroll_video.exists():
+            print(f"エラー: ファイルが見つかりません: {enroll_video}", file=sys.stderr)
+            sys.exit(1)
+        # マッピングは JSON文字列 or ファイルパス
+        import json as _json
+        raw = args.enroll
+        if Path(raw).exists():
+            raw = Path(raw).read_text(encoding="utf-8")
+        try:
+            mapping = _json.loads(raw)
+        except Exception as e:
+            parser.error(f"--enroll のJSONを解釈できません: {e}")
+
+        from .transcriber import extract_audio
+        from .diarization_v2 import load_diarization_pipeline, diarize_audio
+        from .voiceprint import enroll, db_path
+        import tempfile
+        audio_path = str(Path(tempfile.gettempdir()) / "meeting_transcriber" / f"{enroll_video.stem}.wav")
+        Path(audio_path).parent.mkdir(exist_ok=True)
+        print("声紋登録: 音声抽出中...", flush=True)
+        extract_audio(str(enroll_video), audio_path)
+        print("声紋登録: 話者識別中...", flush=True)
+        context = load_context(args.context) if args.context else None
+        num_speakers = args.speakers if args.speakers is not None else expected_speakers(context)
+        pipeline = load_diarization_pipeline()
+        diar = diarize_audio(audio_path, pipeline, num_speakers=num_speakers)
+        report = enroll(args.voiceprints, audio_path, mapping, diar)
+        print(f"声紋登録完了: {db_path(args.voiceprints)}")
+        for name, info in report.items():
+            print(f"  {name}: {info}")
+        return
+
     # Normal transcription mode requires video_path
     if not args.video_path:
         parser.error("動画ファイルのパスを指定してください（または --watch で進行状況を監視）")
@@ -232,9 +300,12 @@ def main():
     max_accuracy = not args.fast
     mode = "速度優先" if args.fast else "最高精度"
 
-    # v2(pyannote)を既定とし、--diarization-v1 指定時のみ従来版
-    use_v2 = not args.diarization_v1
-    diarization_mode = "pyannote.audio v2" if use_v2 else "simple-diarizer (v1)"
+    # 話者識別バックエンド: speakrs(既定/最速) > pyannote > simple
+    backend = resolve_diarizer_backend(args)
+    diarization_mode = {
+        "speakrs": "speakrs (CoreML)",
+        "pyannote": "pyannote.audio",
+    }[backend]
 
     # 案件コンテキスト（任意）: ASR固有名詞 + 文字起こし後の決定的正規化
     context = load_context(args.context) if args.context else None
@@ -253,11 +324,11 @@ def main():
     whisper_result, audio_path = transcribe_video(str(video_path), args.model, max_accuracy, glossary)
     print(f"    完了 ({len(whisper_result.get('segments', []))} セグメント)", flush=True)
 
-    # Import diarization module (v2=pyannote が既定)
-    if use_v2:
+    # Import diarization module（backend に応じて。いずれも同じ3関数を提供）
+    if backend == "pyannote":
         from .diarization_v2 import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
     else:
-        from .diarization import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
+        from .diarization_speakrs import load_diarization_pipeline, diarize_audio, assign_speakers_to_segments
 
     # Step 2: Speaker diarization
     if args.no_diarization:
@@ -272,12 +343,28 @@ def main():
             for seg in whisper_result.get("segments", [])
         ]
     else:
+        # 話者数ヒント: --speakers 明示 > 案件コンテキスト(expected_speakers/roster件数)
+        num_speakers = args.speakers if args.speakers is not None else expected_speakers(context)
         print("2/3 話者識別中...", flush=True)
+        if num_speakers:
+            print(f"    話者数ヒント: {num_speakers}（過分割を抑制）", flush=True)
         print("    モデル読み込み中...", flush=True)
         pipeline = load_diarization_pipeline()
         print("    解析中...", flush=True)
-        diarization_segments = diarize_audio(audio_path, pipeline, num_speakers=args.speakers)
-        segments_with_speakers = assign_speakers_to_segments(whisper_result, diarization_segments)
+        diarization_segments = diarize_audio(audio_path, pipeline, num_speakers=num_speakers)
+
+        # 声紋識別（任意）: --voiceprints 指定時、diarizationクラスタを声紋DBと照合して実名化
+        name_map = None
+        if args.voiceprints:
+            try:
+                from .voiceprint import identify
+                name_map = identify(args.voiceprints, audio_path, diarization_segments, auto_update=True)
+                hit = {k: v for k, v in name_map.items() if v}
+                print(f"    声紋識別: {hit if hit else '一致なし（発話者Nのまま）'}", flush=True)
+            except Exception as e:
+                print(f"    声紋識別スキップ（{type(e).__name__}: {str(e)[:80]}）", file=sys.stderr)
+
+        segments_with_speakers = assign_speakers_to_segments(whisper_result, diarization_segments, name_map=name_map)
         unique_speakers = sorted(set(seg["speaker"] for seg in segments_with_speakers if seg["speaker"] != "不明"))
         print(f"    完了 (話者: {', '.join(unique_speakers)})", flush=True)
 

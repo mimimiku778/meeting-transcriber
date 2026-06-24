@@ -28,10 +28,24 @@ async def list_tools() -> list[Tool]:
                     "video_path": {"type": "string", "description": "動画ファイルのパス（絶対パス）"},
                     "output_path": {"type": "string", "description": "出力ファイルのパス（省略時は動画と同じディレクトリ）"},
                     "model": {"type": "string", "description": "Whisperモデル (small-4bit/small/medium/large-v3/large-v3-turbo)", "default": "large-v3-turbo"},
-                    "diarization_v2": {"type": "boolean", "description": "pyannote.audio ベースの高精度話者識別（既定）。Falseで従来simple-diarizer", "default": True},
-                    "context_path": {"type": "string", "description": "案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し文字起こし後に決定的正規化を適用"}
+                    "diarizer": {"type": "string", "enum": ["speakrs", "pyannote"], "description": "話者識別バックエンド（既定: speakrs = Apple Silicon CoreMLで最速・pyannote同等精度）。pyannoteは同モデルだがCPUで低速", "default": "speakrs"},
+                    "context_path": {"type": "string", "description": "案件コンテキスト(project.context.yaml)のパス。固有名詞をASRに注入し文字起こし後に決定的正規化を適用"},
+                    "voiceprint_profile": {"type": "string", "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json と照合し『発話者N』を登録済みの実名に自動置換する。未登録・低信頼の話者は発話者Nのまま"}
                 },
                 "required": ["video_path"]
+            }
+        ),
+        Tool(
+            name="enroll_voiceprints",
+            description="人間が確定した『発話者N→実名』マッピングから各実名の声紋を登録/更新します。会議を重ねるほど精度が上がります。",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "video_path": {"type": "string", "description": "登録元の動画ファイルのパス（絶対パス）"},
+                    "voiceprint_profile": {"type": "string", "description": "声紋プロファイル名（例: myteam）。~/.claude/voiceprints/<名前>.json に保存される"},
+                    "speaker_mapping": {"type": "object", "description": "発話者ラベル→実名のマッピング 例 {\"発話者1\":\"山田\",\"発話者2\":\"鈴木\"}", "additionalProperties": {"type": "string"}}
+                },
+                "required": ["video_path", "voiceprint_profile", "speaker_mapping"]
             }
         ),
         Tool(
@@ -99,6 +113,8 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
             return handle_read_transcript(arguments)
         elif name == "finalize_meeting_files":
             return handle_finalize_meeting_files(arguments)
+        elif name == "enroll_voiceprints":
+            return await handle_enroll_voiceprints(arguments)
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
     except Exception as e:
@@ -111,15 +127,17 @@ async def handle_transcribe_meeting(arguments: dict) -> list[TextContent]:
     model = arguments.get("model", "large-v3-turbo")
     context_path = arguments.get("context_path")
 
-    diarization_v2 = arguments.get("diarization_v2", True)
+    # 話者識別バックエンド: diarizer 明示 > speakrs(既定)
+    diarizer = arguments.get("diarizer") or "speakrs"
+    voiceprint_profile = arguments.get("voiceprint_profile")
 
-    cmd = ["transcribe", video_path, "-m", model]
+    cmd = ["transcribe", video_path, "-m", model, "--diarizer", diarizer]
     if output_path:
         cmd.extend(["-o", output_path])
-    if not diarization_v2:
-        cmd.append("--diarization-v1")
     if context_path:
         cmd.extend(["--context", context_path])
+    if voiceprint_profile:
+        cmd.extend(["--voiceprints", voiceprint_profile])
 
     LOG_FILE.write_text("")
     with open(LOG_FILE, "w") as log_file:
@@ -131,6 +149,23 @@ async def handle_transcribe_meeting(arguments: dict) -> list[TextContent]:
 
     log_content = LOG_FILE.read_text()
     return [TextContent(type="text", text=f"完了\n出力: {output_path}\n\n{log_content}")]
+
+
+async def handle_enroll_voiceprints(arguments: dict) -> list[TextContent]:
+    video_path = arguments["video_path"]
+    profile = arguments["voiceprint_profile"]
+    mapping = arguments["speaker_mapping"]
+
+    import json as _json
+    cmd = ["transcribe", video_path, "--voiceprints", profile, "--enroll", _json.dumps(mapping, ensure_ascii=False)]
+
+    LOG_FILE.write_text("")
+    with open(LOG_FILE, "w") as log_file:
+        process = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        process.wait()
+
+    log_content = LOG_FILE.read_text()
+    return [TextContent(type="text", text=f"声紋登録\nプロファイル: {profile}\n\n{log_content}")]
 
 
 def handle_extract_video_frame(arguments: dict) -> list[TextContent]:

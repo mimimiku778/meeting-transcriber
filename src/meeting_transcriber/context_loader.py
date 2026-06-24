@@ -10,8 +10,8 @@
 - 「誰がどの会社か」「決定/宿題/課題の帰属」は音声/文字だけでは復元できない。
   動画フレーム(参加者パネル+共有資料)で確定した事実を YAML に固定し、
   ASRと議事録生成の双方へ注入することで帰属ズレを根本から断つ。
-- 略語の意味反転に注意。例: 文字起こしの「DCさん」は自社(DGCircus)を正しく指す。
-  決定的置換に DC を含めてはならない。曖昧な略語は context_notes で Claude に判定させる。
+- 略語の意味反転に注意。例: ある略号が文脈によって別の会社を指すことがある。
+  そうした曖昧な略号は決定的置換に含めず、context_notes で Claude に判定させる。
 """
 
 from __future__ import annotations
@@ -36,6 +36,19 @@ def load_context(context_path: str | Path | None) -> dict | None:
         raise RuntimeError("pyyaml が必要です: pip install pyyaml")
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
     return data or {}
+
+
+def expected_speakers(context: dict | None) -> int | None:
+    """話者数のヒントを返す。meeting.expected_speakers 優先、無ければ
+    speaker_roster の件数。diarizationの過分割を防ぐために num_speakers へ渡す。"""
+    if not context:
+        return None
+    meeting = context.get("meeting", {}) or {}
+    n = meeting.get("expected_speakers")
+    if isinstance(n, int) and n > 0:
+        return n
+    roster = context.get("speaker_roster", []) or []
+    return len(roster) if roster else None
 
 
 def asr_glossary(context: dict | None, limit: int = 40) -> list[str]:
